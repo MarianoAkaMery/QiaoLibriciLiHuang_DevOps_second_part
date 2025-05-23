@@ -1,4 +1,4 @@
-name: Build and Run Singularity Container
+name: Build and Run Apptainer Container
 
 on:
   push:
@@ -13,56 +13,36 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
-    
+
     - name: Checkout code with submodules
       uses: actions/checkout@v3
       with:
-          submodules: recursive
+        submodules: recursive
+
     - name: Show submodule status
       run: git submodule status
-          
-    - name: install dependencies for Singularity 
-      run: |
-        sudo apt-get install -y \
-          uuid-dev \
-          build-essential \
-          libseccomp-dev \
-          pkg-config \
-          squashfs-tools \
-          cryptsetup \
-          curl wget git
 
-    - name: install Go
+    - name: Install Apptainer
       run: |
-        export GOVERSION=1.17.3 OS=linux ARCH=amd64
-        wget -O /tmp/go${GOVERSION}.${OS}-${ARCH}.tar.gz \
-          https://dl.google.com/go/go${GOVERSION}.${OS}-${ARCH}.tar.gz
-        sudo tar -C /usr/local -xzf /tmp/go${GOVERSION}.${OS}-${ARCH}.tar.gz
+        sudo apt-get update
+        sudo apt-get install -y apptainer sshpass
 
-    - name : setup Env for GO
-      run: echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc && source ~/.bashrc
-      
-    - name: Install Singularity
-      run: |
-        export VERSION=3.8.7 && # adjust this as necessary \
-        wget https://github.com/hpcng/singularity/releases/download/v${VERSION}/singularity-${VERSION}.tar.gz \
-        && sudo tar -xzf singularity-${VERSION}.tar.gz \
-        && cd singularity-${VERSION} \
-        && sudo ./mconfig \
-        && sudo make -C builddir \
-        && sudo make -C builddir install
-  
-    - name : verifyVersion
-      run: singularity --version
-  
-    - name: Build Singularity Image
-      run: |
-        sudo singularity build grayscale.sif Singularity.def
+    - name: Verify Apptainer version
+      run: apptainer --version
 
-    - name: Run Application in Singularity
+    - name: Build SIF image with Apptainer
       run: |
-        singularity run grayscale.sif input output Average
-    
+        apptainer build grayscale.sif Singularity.def
+
+    - name: Prepare input and output folders
+      run: |
+        mkdir -p input output
+        echo "P3\n1 1\n255\n255 0 0" > input/sample.ppm  # 示例图片（红色像素）
+
+    - name: Run grayscale application in container
+      run: |
+        apptainer run grayscale.sif input output Average
+
     - name: Upload output images
       uses: actions/upload-artifact@v4
       with:
@@ -79,7 +59,7 @@ jobs:
       run: |
         mkdir -p ~/.ssh
         touch ~/.ssh/known_hosts
-        ssh-keygen -R login.g100.cineca.it
+        ssh-keygen -R login.g100.cineca.it || true
         ssh-keyscan -H login.g100.cineca.it >> ~/.ssh/known_hosts
 
     - name: Transfer job script and sif file to cluster via scp
@@ -88,8 +68,8 @@ jobs:
         SLURM_HOST: ${{ secrets.SLURM_HOST }}
         SLURM_PASSWORD: ${{ secrets.SLURM_PASSWORD }}
       run: |
-        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no grayscale.sif ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject
-        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no job_script.slurm ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp -o StrictHostKeyChecking=no grayscale.sif ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp -o StrictHostKeyChecking=no job_script.slurm ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
 
     - name: Submit job to cluster via ssh
       env:
@@ -97,6 +77,5 @@ jobs:
         SLURM_HOST: ${{ secrets.SLURM_HOST }}
         SLURM_PASSWORD: ${{ secrets.SLURM_PASSWORD }}
       run: |
-        sshpass -p "${{ secrets.SLURM_PASSWORD }}" ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} "cd ~/seproject && dos2unix job_script.slurm && sbatch job_script.slurm"
-
-
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} \
+        "cd ~/seproject && dos2unix job_script.slurm && sbatch job_script.slurm"
