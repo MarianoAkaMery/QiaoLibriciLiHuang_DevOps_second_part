@@ -22,10 +22,14 @@ jobs:
     - name: Show submodule status
       run: git submodule status
 
-    - name: Install Apptainer
+    - name: Install dependencies and Apptainer (unprivileged)
       run: |
         sudo apt-get update
-        sudo apt-get install -y apptainer sshpass
+        sudo apt-get install -y libseccomp-dev pkg-config squashfs-tools cryptsetup curl wget git sshpass
+        curl -s https://raw.githubusercontent.com/apptainer/apptainer/main/tools/install-unprivileged.sh | bash
+
+    - name: Add Apptainer to PATH
+      run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Verify Apptainer version
       run: apptainer --version
@@ -37,7 +41,7 @@ jobs:
     - name: Prepare input and output folders
       run: |
         mkdir -p input output
-        echo "P3\n1 1\n255\n255 0 0" > input/sample.ppm  # 示例图片（红色像素）
+        echo -e "P3\n1 1\n255\n255 0 0" > input/sample.ppm  # 红色像素的简单图像
 
     - name: Run grayscale application in container
       run: |
