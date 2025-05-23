@@ -1,0 +1,25 @@
+Running main() from /opt/app/external/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from GrayscaleTest
+[ RUN      ] GrayscaleTest.RedChannelConversion
+[       OK ] GrayscaleTest.RedChannelConversion (0 ms)
+[ RUN      ] GrayscaleTest.LuminosityConversion
+/opt/app/test/test_image_processing.cpp:15: Failure
+Expected equality of these values:
+  result[0][0]
+    Which is: 254
+  255
+
+[  FAILED  ] GrayscaleTest.LuminosityConversion (0 ms)
+[ RUN      ] GrayscaleTest.AverageConversion
+[       OK ] GrayscaleTest.AverageConversion (0 ms)
+[----------] 3 tests from GrayscaleTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] GrayscaleTest.LuminosityConversion
+
+ 1 FAILED TEST

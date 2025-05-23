@@ -1,0 +1,6 @@
+
+Create tmp directory SINGULARITY_TMPDIR = /scratch_local/yli00000/singularity_tmp
+Create cache directory SINGULARITY_CACHEDIR = /scratch_local/yli00000/singularity_cache
+Converted: input/symmetric_3.ppm -> output/symmetric_3.pgm
+Converted: input/symmetric_1.ppm -> output/symmetric_1.pgm
+Converted: input/symmetric_2.ppm -> output/symmetric_2.pgm
