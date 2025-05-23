@@ -88,9 +88,16 @@ jobs:
 
     - name: Transfer files to Galileo via scp
       run: |
-        scp -o StrictHostKeyChecking=no grayscale.sif job.sh ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
+        scp -o StrictHostKeyChecking=no \
+            -o PreferredAuthentications=publickey \
+            -o PubkeyAuthentication=yes \
+            grayscale.sif job.sh ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
 
     - name: Submit SLURM job via SSH
       run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} \
-        "cd ~/seproject && sbatch job.sh"
+        ssh -o StrictHostKeyChecking=no \
+            -o PreferredAuthentications=publickey \
+            -o PubkeyAuthentication=yes \
+            ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} \
+            "cd ~/seproject && sbatch job.sh"
+
