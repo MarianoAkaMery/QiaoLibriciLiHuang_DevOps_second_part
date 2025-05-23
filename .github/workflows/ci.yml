@@ -74,3 +74,24 @@ jobs:
       with:
         name: grayscale-sif
         path: grayscale.sif
+    - name: Convert job.sh to UNIX line endings
+      run: dos2unix job.sh || true
+      
+    - name: Transfer files to Galileo via scp
+      env:
+        SLURM_USER: ${{ secrets.SLURM_USER }}
+        SLURM_HOST: ${{ secrets.SLURM_HOST }}
+        SLURM_PASSWORD: ${{ secrets.SLURM_PASSWORD }}
+      run: |
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp -o StrictHostKeyChecking=no grayscale.sif ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp -o StrictHostKeyChecking=no job.sh ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
+    
+    - name: Submit SLURM job via SSH
+      env:
+        SLURM_USER: ${{ secrets.SLURM_USER }}
+        SLURM_HOST: ${{ secrets.SLURM_HOST }}
+        SLURM_PASSWORD: ${{ secrets.SLURM_PASSWORD }}
+      run: |
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} \
+        "cd ~/seproject && sbatch job.sh"
+
