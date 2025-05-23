@@ -12,7 +12,7 @@ From: ubuntu:22.04
         apt-get update && break || sleep 5
     done
 
-    apt-get update && apt-get install -y \
+    apt-get install -y \
         build-essential \
         cmake \
         git \
@@ -21,9 +21,9 @@ From: ubuntu:22.04
 
     # build Gtest library
     cd /usr/src/gtest
-    cmake .
+    cmake -DCMAKE_CXX_FLAGS="-fPIC" .
     make
-    cp *.a /usr/lib
+    cp lib/*.a /usr/lib
 
     # build the context
     mkdir -p /opt/app/build
@@ -41,4 +41,3 @@ From: ubuntu:22.04
 
 %runscript
     exec /opt/app/build/convert_grayscale "$@"
-    echo "This is a Singularity container for grayscale."
