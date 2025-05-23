@@ -89,18 +89,22 @@ jobs:
         SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
 
     - name: Test SSH key
-      run: ssh -v -o StrictHostKeyChecking=no ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} echo ok
+      run: |
+        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
+            -o PreferredAuthentications=publickey \
+            -o PubkeyAuthentication=yes \
+            ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} echo ok
 
     - name: Transfer files to Galileo via scp
       run: |
-        scp -o StrictHostKeyChecking=no \
+        scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
             -o PreferredAuthentications=publickey \
             -o PubkeyAuthentication=yes \
             grayscale.sif job.sh ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
 
     - name: Submit SLURM job via SSH
       run: |
-        ssh -o StrictHostKeyChecking=no \
+        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
             -o PreferredAuthentications=publickey \
             -o PubkeyAuthentication=yes \
             ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} \
