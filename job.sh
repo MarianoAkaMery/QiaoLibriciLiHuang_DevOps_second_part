@@ -35,3 +35,4 @@ mkdir -p $SINGULARITY_TMPDIR $SINGULARITY_CACHEDIR
 
 singularity exec ./grayscale.sif /opt/app/build/convert_grayscale input output Average
 
+singularity exec ./grayscale.sif /opt/app/build/test_grayscale > test_output.txt 2>&1
