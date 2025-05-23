@@ -2,8 +2,8 @@ Bootstrap: docker
 From: ubuntu:22.04 
 
 %labels
-    Author "QIAO"
-    Version "1.0"
+    Author "yibo"
+    Version "1.?"
 
 %post
     # download  tools
@@ -13,6 +13,12 @@ From: ubuntu:22.04
         git \
         libgtest-dev \
         && rm -rf /var/lib/apt/lists/*
+
+    # build Gtest library
+    cd /usr/src/gtest
+    cmake .
+    make
+    cp *.a /usr/lib
 
     # build the context
     mkdir -p /opt/app/build
