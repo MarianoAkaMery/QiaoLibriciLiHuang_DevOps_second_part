@@ -24,6 +24,7 @@ This project provides a utility to convert `.ppm` images to `.pgm` format using 
   - Handles invalid grayscale methods.
   - Skips files that cannot be read or written.
 
+
 ---
 
 ## Usage
