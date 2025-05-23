@@ -6,7 +6,7 @@ This project provides a utility to convert `.ppm` images to `.pgm` format using 
 
 ---
 
-## Features
+## Features 
 
 - **Supported Grayscale Methods**:
   - `Lightness`: Average of the brightest and darkest color channels.
