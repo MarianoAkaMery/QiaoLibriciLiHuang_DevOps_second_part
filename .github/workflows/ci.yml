@@ -83,6 +83,7 @@ jobs:
         mkdir -p ~/.ssh
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
+        ssh-keygen -R ${{ secrets.SLURM_HOST }} || true
         ssh-keyscan -H ${{ secrets.SLURM_HOST }} >> ~/.ssh/known_hosts
 
     - name: Transfer files to Galileo via scp
