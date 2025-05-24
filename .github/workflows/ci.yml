@@ -92,8 +92,17 @@ jobs:
         SLURM_PASSWORD: ${{ secrets.SLURM_PASSWORD }}
       run: |
         sudo apt-get install -y sshpass
-        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no grayscale.sif ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
-        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no job.sh ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp \
+          -o UserKnownHostsFile=/dev/null \
+          -o StrictHostKeyChecking=no \
+          -o PubkeyAuthentication=no \
+          grayscale.sif ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
+
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp \
+          -o UserKnownHostsFile=/dev/null \
+          -o StrictHostKeyChecking=no \
+          -o PubkeyAuthentication=no \
+          job.sh ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
 
     - name: Submit job to cluster via SSH
       env:
