@@ -78,40 +78,29 @@ jobs:
     - name: Convert job.sh to UNIX line endings
       run: dos2unix job.sh || true
 
-    - name: Set up SSH key
+    - name: Remove old host-key And Add new host-key to known_hosts
       run: |
         mkdir -p ~/.ssh
-        chmod 700 ~/.ssh
-        echo "$SSH_KEY" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
+        touch ~/.ssh/known_hosts
         ssh-keygen -R ${{ secrets.SLURM_HOST }} || true
         ssh-keyscan -H ${{ secrets.SLURM_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Transfer job script and sif file to cluster via scp
       env:
-        SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-
-
-    - name: Test SSH key
+        SLURM_USER: ${{ secrets.SLURM_USER }}
+        SLURM_HOST: ${{ secrets.SLURM_HOST }}
+        SLURM_PASSWORD: ${{ secrets.SLURM_PASSWORD }}
       run: |
-        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
-            -o GSSAPIAuthentication=no \
-            -o PreferredAuthentications=publickey \
-            -o PubkeyAuthentication=yes \
-            ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} echo ok
+        sudo apt-get install -y sshpass
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no grayscale.sif ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no job.sh ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
 
-    - name: Transfer files to Galileo via scp
+    - name: Submit job to cluster via SSH
+      env:
+        SLURM_USER: ${{ secrets.SLURM_USER }}
+        SLURM_HOST: ${{ secrets.SLURM_HOST }}
+        SLURM_PASSWORD: ${{ secrets.SLURM_PASSWORD }}
       run: |
-        scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
-            -o GSSAPIAuthentication=no \
-            -o PreferredAuthentications=publickey \
-            -o PubkeyAuthentication=yes \
-            grayscale.sif job.sh ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
-
-    - name: Submit SLURM job via SSH
-      run: |
-        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
-            -o GSSAPIAuthentication=no \
-            -o PreferredAuthentications=publickey \
-            -o PubkeyAuthentication=yes \
-            ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} \
-            "cd ~/seproject && sbatch job.sh"
+        sshpass -p "${{ secrets.SLURM_PASSWORD }}" ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} \
+        "cd ~/seproject && sbatch job.sh"
 
