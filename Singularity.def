@@ -23,16 +23,12 @@ From: ubuntu:22.04
     echo "📦 Creating app directory..."
     mkdir -p /opt/app
 
-%files
-. /opt/app_src
-
 %environment
     export PATH=/opt/app/build:$PATH
 
 %runscript
     echo "🚀 Running grayscale conversion inside container..."
 
-    # Build at runtime if not built yet
     if [ ! -f /opt/app/build/convert_grayscale ]; then
         echo "🔨 Building the app from source..."
         cp -r /opt/app_src/* /opt/app/
