@@ -38,18 +38,17 @@ jobs:
           ./mconfig && make -C builddir && sudo make -C builddir install
           cd ..
 
-      - name: Build & test with Google Test
-        run: |
-          mkdir -p build
-          cmake -S . -B build
-          cmake --build build
-          ./build/test_grayscale
+      - name: Run build script
+        run: ./build.sh
+
+      - name: Run unit tests
+        run: ./build/test_grayscale
 
       - name: Build Singularity image
         run: |
           sudo singularity build grayscale.sif Singularity.def
 
-      - name: Upload output and .sif
+      - name: Upload .sif image
         uses: actions/upload-artifact@v4
         with:
           name: grayscale.sif
