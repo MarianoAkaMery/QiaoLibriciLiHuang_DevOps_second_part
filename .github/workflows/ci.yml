@@ -30,7 +30,6 @@ jobs:
           tar -xzf singularity-3.8.7.tar.gz
           cd singularity-3.8.7
           ./mconfig && make -C builddir && sudo make -C builddir install
-          cd ..
 
       - name: Run build script
         run: ./build.sh
@@ -53,7 +52,7 @@ jobs:
       - name: Set up SSH key, cert and config
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SLURM_PRIVATE_KEY }}" > ~/.ssh/my_key
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/my_key
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/my_key.pub
           echo "${{ secrets.SSH_CERTIFICATE }}" > ~/.ssh/my_key-cert.pub
 
