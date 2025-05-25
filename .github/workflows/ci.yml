@@ -73,15 +73,7 @@ jobs:
 
       - name: Transfer files to Galileo100
         run: |
-          scp -F ~/.ssh/config grayscale.sif job.sh Singularity.def galileo:~/seproject/
-
-      - name: Build image on Galileo100
-        run: |
-          ssh -F ~/.ssh/config galileo "
-            module load singularity &&
-            cd ~/seproject &&
-            singularity build --force grayscale.sif Singularity.def
-          "
+          scp -F ~/.ssh/config grayscale.sif job.sh galileo:~/seproject/
 
       - name: Submit SLURM job
         run: |
