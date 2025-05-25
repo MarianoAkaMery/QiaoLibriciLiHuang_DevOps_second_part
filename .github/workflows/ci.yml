@@ -1,56 +1,15 @@
-name: DevOps Pipeline Test
+name: Test Galileo SSH Connection
 
 on:
   push:
-    branches: [ master, main ]
-  pull_request:
-    branches: [ master, main ]
+    branches: [main, master]
 
 jobs:
-  build-test-containerize:
+  ssh-test:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code with submodules
-        uses: actions/checkout@v3
-        with:
-          submodules: recursive
-
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            cmake g++ make \
-            uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
-            dos2unix curl wget openssh-client
-
-      - name: Install Singularity
-        run: |
-          wget https://github.com/hpcng/singularity/releases/download/v3.8.7/singularity-3.8.7.tar.gz
-          tar -xzf singularity-3.8.7.tar.gz
-          cd singularity-3.8.7
-          ./mconfig && make -C builddir && sudo make -C builddir install
-          cd ..
-
-      - name: Run build script
-        run: ./build.sh
-
-      - name: Run unit tests
-        run: ./build/test_grayscale
-
-      - name: Build Singularity image
-        run: sudo singularity build grayscale.sif Singularity.def
-
-      - name: Upload Singularity image
-        uses: actions/upload-artifact@v4
-        with:
-          name: grayscale.sif
-          path: grayscale.sif
-
-      - name: Prepare job.sh
-        run: dos2unix job.sh || true
-
-      - name: Set up SSH key, cert and config
+      - name: Setup SSH key, cert, and config
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/my_key
@@ -61,7 +20,7 @@ jobs:
           chmod 644 ~/.ssh/my_key.pub ~/.ssh/my_key-cert.pub
 
           cat <<EOF > ~/.ssh/config
-          Host cineca
+          Host galileo
               HostName ${{ secrets.SLURM_HOST }}
               User ${{ secrets.SLURM_USER }}
               IdentityFile ~/.ssh/my_key
@@ -71,10 +30,6 @@ jobs:
               UserKnownHostsFile=/dev/null
           EOF
 
-      - name: Transfer files to Galileo100
+      - name: Test SSH connection to Galileo100
         run: |
-          scp -F ~/.ssh/config grayscale.sif job.sh cineca:~/seproject/
-
-      - name: Submit SLURM job
-        run: |
-          ssh -F ~/.ssh/config cineca "cd ~/seproject && sbatch job.sh"
+          ssh -F ~/.ssh/config galileo "hostname && whoami && date"
