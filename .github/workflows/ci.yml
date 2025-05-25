@@ -1,4 +1,4 @@
-name: Test Galileo SSH Connection
+name: Test Galileo SSH Connection2
 
 on:
   push:
