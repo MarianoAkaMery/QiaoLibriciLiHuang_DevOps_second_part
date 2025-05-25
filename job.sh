@@ -1,38 +1,32 @@
-Bootstrap: docker
-From: ubuntu:22.04
+#!/bin/bash
 
-%labels
-    Author "Yibo"
-    Version "1.0"
+#SBATCH --job-name=grayscale_job
+#SBATCH --output=grayscale_output.log
+#SBATCH --error=grayscale_output.log
+#SBATCH --time=0:10:00
+#SBATCH --ntasks=1
+#SBATCH --nodes=1
+#SBATCH --partition=g100_all_serial
 
-%post
-    echo "🧱 Installing system dependencies..."
-    apt-get update && apt-get install -y \
-        build-essential \
-        cmake \
-        git \
-        libgtest-dev \
-        && rm -rf /var/lib/apt/lists/*
+module load singularity
 
-    echo "⚙️ Building GoogleTest manually..."
-    cd /usr/src/gtest
-    cmake -DCMAKE_CXX_FLAGS="-fPIC" .
-    make
-    cp lib/*.a /usr/lib
+export TMPDIR=~/tmp
+mkdir -p "$TMPDIR"
 
-    echo "📦 Copying and building source code..."
-    mkdir -p /opt/app
-    cp -r /opt/app_src/* /opt/app/
-    cd /opt/app
-    chmod +x build.sh
-    ./build.sh
+export OMPI_MCA_tmpdir_base="$TMPDIR"
+export OMPI_MCA_orte_tmpdir_base="$TMPDIR"
+export OMPI_MCA_plm_rsh_agent="ssh :rsh"
+export OMPI_MCA_btl=self,tcp
 
-%files
-. /opt/app_src
+export SINGULARITY_TMPDIR="$TMPDIR/singularity_tmp"
+export SINGULARITY_CACHEDIR="$TMPDIR/singularity_cache"
+mkdir -p "$SINGULARITY_TMPDIR" "$SINGULARITY_CACHEDIR"
 
-%environment
-    export PATH=/opt/app/build:$PATH
+echo "Create tmp directory SINGULARITY_TMPDIR = $SINGULARITY_TMPDIR"
+echo "Create cache directory SINGULARITY_CACHEDIR = $SINGULARITY_CACHEDIR"
 
-%runscript
-    echo "🚀 Running grayscale conversion inside container..."
-    exec /opt/app/build/convert_grayscale "$@"
+echo "Running grayscale conversion..."
+singularity exec grayscale.sif /opt/app/build/convert_grayscale input output Average
+
+echo "Running grayscale tests..."
+singularity exec grayscale.sif /opt/app/build/test_grayscale >> grayscale_output.log 2>&1
