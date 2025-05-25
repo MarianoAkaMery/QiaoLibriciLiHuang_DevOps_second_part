@@ -25,10 +25,6 @@ mkdir -p $SINGULARITY_TMPDIR $SINGULARITY_CACHEDIR
 echo "Create tmp directory SINGULARITY_TMPDIR = $SINGULARITY_TMPDIR"
 echo "Create cache directory SINGULARITY_CACHEDIR = $SINGULARITY_CACHEDIR"
 
-echo "Building Singularity image with fakeroot..."
-rm -f grayscale.sif
-singularity build --fakeroot grayscale.sif Singularity.def
-
 echo "Running grayscale conversion..."
 singularity exec grayscale.sif /opt/app/build/convert_grayscale input output Average
 
