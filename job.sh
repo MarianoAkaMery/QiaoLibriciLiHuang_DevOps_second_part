@@ -22,11 +22,17 @@ export SINGULARITY_TMPDIR=$TMPDIR/singularity_tmp
 export SINGULARITY_CACHEDIR=$TMPDIR/singularity_cache
 mkdir -p $SINGULARITY_TMPDIR $SINGULARITY_CACHEDIR
 
-echo "Create tmp directory SINGULARITY_TMPDIR = $SINGULARITY_TMPDIR"
-echo "Create cache directory SINGULARITY_CACHEDIR = $SINGULARITY_CACHEDIR"
+echo "✅ SINGULARITY_TMPDIR = $SINGULARITY_TMPDIR"
+echo "✅ SINGULARITY_CACHEDIR = $SINGULARITY_CACHEDIR"
 
-echo "Running grayscale conversion..."
-singularity exec grayscale.sif /opt/app/build/convert_grayscale input output Average
+echo "🚀 Running grayscale conversion..."
+singularity exec grayscale.sif /opt/app/build/convert_grayscale input output Average || {
+    echo "❌ Grayscale conversion failed"
+    exit 1
+}
 
-echo "Running grayscale tests..."
-singularity exec grayscale.sif /opt/app/build/test_grayscale >> grayscale_output.log 2>&1
+echo "🧪 Running grayscale tests..."
+singularity exec grayscale.sif /opt/app/build/test_grayscale || {
+    echo "❌ Tests failed"
+    exit 1
+}

@@ -20,14 +20,8 @@ From: ubuntu:22.04
     make
     cp lib/*.a /usr/lib
 
-    echo "📦 Copying source code..."
+    echo "📦 Creating app directory..."
     mkdir -p /opt/app
-    cp -r /opt/app_src/* /opt/app/
-
-    echo "🔨 Running build.sh..."
-    cd /opt/app
-    chmod +x build.sh
-    ./build.sh
 
 %files
 . /opt/app_src
@@ -37,4 +31,14 @@ From: ubuntu:22.04
 
 %runscript
     echo "🚀 Running grayscale conversion inside container..."
+
+    # Build at runtime if not built yet
+    if [ ! -f /opt/app/build/convert_grayscale ]; then
+        echo "🔨 Building the app from source..."
+        cp -r /opt/app_src/* /opt/app/
+        cd /opt/app
+        chmod +x build.sh
+        ./build.sh
+    fi
+
     exec /opt/app/build/convert_grayscale "$@"
