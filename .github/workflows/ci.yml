@@ -53,7 +53,7 @@ jobs:
       - name: Set up SSH key, cert and config
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/my_key
+          echo "${{ secrets.SLURM_PRIVATE_KEY }}" > ~/.ssh/my_key
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/my_key.pub
           echo "${{ secrets.SSH_CERTIFICATE }}" > ~/.ssh/my_key-cert.pub
 
