@@ -1,4 +1,4 @@
-name: DevOps Pipeline Test3
+name: DevOps Pipeline Test
 
 on:
   push:
@@ -30,6 +30,7 @@ jobs:
           tar -xzf singularity-3.8.7.tar.gz
           cd singularity-3.8.7
           ./mconfig && make -C builddir && sudo make -C builddir install
+          cd ..
 
       - name: Run build script
         run: ./build.sh
