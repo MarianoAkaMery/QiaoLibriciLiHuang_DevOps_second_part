@@ -1,4 +1,4 @@
-name: DevOps Pipeline
+name: DevOps Pipeline Test
 
 on:
   push:
