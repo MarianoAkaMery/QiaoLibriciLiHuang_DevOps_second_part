@@ -1,77 +1,29 @@
-name: DevOps Pipeline Test
+name: Test SLURM Login
 
 on:
-  push:
-    branches: [ master, main ]
-  pull_request:
-    branches: [ master, main ]
+  workflow_dispatch: # Manually triggered
 
 jobs:
-  build-test-containerize:
+  galileo-login-test:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code with submodules
-        uses: actions/checkout@v3
-        with:
-          submodules: recursive
-
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            cmake g++ make \
-            uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
-            sshpass dos2unix curl wget
-
-      - name: Install Go (for Singularity build)
-        run: |
-          wget -O go.tar.gz https://dl.google.com/go/go1.17.3.linux-amd64.tar.gz
-          sudo tar -C /usr/local -xzf go.tar.gz
-          echo "/usr/local/go/bin" >> $GITHUB_PATH
-
-      - name: Install Singularity
-        run: |
-          wget https://github.com/hpcng/singularity/releases/download/v3.8.7/singularity-3.8.7.tar.gz
-          tar -xzf singularity-3.8.7.tar.gz
-          cd singularity-3.8.7
-          ./mconfig && make -C builddir && sudo make -C builddir install
-          cd ..
-
-      - name: Run build script
-        run: ./build.sh
-
-      - name: Run unit tests
-        run: ./build/test_grayscale
-
-      - name: Build Singularity image
-        run: |
-          sudo singularity build grayscale.sif Singularity.def
-
-      - name: Upload .sif image
-        uses: actions/upload-artifact@v4
-        with:
-          name: grayscale.sif
-          path: grayscale.sif
-
-      - name: Prepare job.sh
-        run: dos2unix job.sh || true
-
-      - name: Add remote cluster to known_hosts
+      - name: Add Galileo to known_hosts
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.SLURM_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Transfer files to Galileo100
+      - name: Try login to Galileo100
+        env:
+          SLURM_USER: ${{ secrets.SLURM_USER }}
+          SLURM_HOST: ${{ secrets.SLURM_HOST }}
+          SLURM_PASSWORD: ${{ secrets.SLURM_PASSWORD }}
         run: |
-          sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp \
+          sudo apt-get update && sudo apt-get install -y sshpass
+          sshpass -p "${SLURM_PASSWORD}" ssh \
             -o StrictHostKeyChecking=no \
-            grayscale.sif job.sh \
-            ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
+            ${SLURM_USER}@${SLURM_HOST} \
+            "hostname && echo '✅ Login successful'"
 
-      - name: Submit SLURM job
-        run: |
-          sshpass -p "${{ secrets.SLURM_PASSWORD }}" ssh \
-            -o StrictHostKeyChecking=no \
-            ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} \
-            "cd ~/seproject && sbatch job.sh"
+
+
