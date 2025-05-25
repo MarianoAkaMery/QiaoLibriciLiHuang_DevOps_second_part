@@ -79,18 +79,9 @@ jobs:
         run: |
           ssh -F ~/.ssh/config galileo "cd ~/seproject && sbatch job.sh"
 
-      - name: Wait for job to complete (pause)
-        run: sleep 90
+      - name: Wait for SLURM job to complete
+        run: sleep 60  # Adjust if needed (e.g., 90s)
 
-      - name: Retrieve output logs from Galileo100
+      - name: Download result logs
         run: |
           scp -F ~/.ssh/config galileo:~/seproject/grayscale_output.log .
-          scp -F ~/.ssh/config galileo:~/seproject/grayscale_error.log .
-
-      - name: Upload SLURM logs as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: slurm-logs
-          path: |
-            grayscale_output.log
-            grayscale_error.log
