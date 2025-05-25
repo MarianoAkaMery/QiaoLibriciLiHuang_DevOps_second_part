@@ -3,36 +3,60 @@ From: ubuntu:22.04
 
 %labels
     Author "Yibo"
-    Version "1.0"
+    Version "1.1"   # bumped to show the fix
 
 %post
-    echo "🧱  Installing system deps …"
+    # -------------------------------------------------------------------------
+    echo "🧱 Installing system dependencies …"
     apt-get update && apt-get install -y \
         build-essential cmake git libgtest-dev \
         && rm -rf /var/lib/apt/lists/*
 
-    echo "⚙️  Building GoogleTest manually …"
+    # -------------------------------------------------------------------------
+    echo "⚙️  Building GoogleTest once for the container …"
     cd /usr/src/gtest
     cmake -DCMAKE_CXX_FLAGS="-fPIC" .
-    make -j$(nproc)
-    cp lib/*.a /usr/lib
+    make -j"$(nproc)"
+    cp lib/libgtest*.a /usr/lib
 
-    echo "📦  Copying application sources …"
+    # -------------------------------------------------------------------------
+    echo "📦  Creating application directory …"
     mkdir -p /opt/app
-    cp -r /opt/app_src/* /opt/app/
-
-    echo "🔨  Configuring & compiling application …"
-    cd /opt/app
-    chmod +x build.sh
-    ./build.sh            # produces build/convert_grayscale & build/test_grayscale
+    # nothing is copied here; sources come via the %files section
 
 %files
-. /opt/app_src           # context from the repo pushed by the GH runner
+    # copy **only sources & scripts**, NOT the host-side build artefacts
+    CMakeLists.txt            /opt/app_src/
+    include/                  /opt/app_src/
+    src/                      /opt/app_src/
+    test/                     /opt/app_src/
+    input/                    /opt/app_src/
+    build.sh                  /opt/app_src/
+    convert_ppm.py            /opt/app_src/
+    random_gen_images.py      /opt/app_src/
+    LICENSE                   /opt/app_src/
+    job.sh                    /opt/app_src/
 
 %environment
-    export PATH=/opt/app/build:$PATH   # make binaries callable directly
+    export PATH=/opt/app/build:$PATH
 
 %runscript
-    # Default action inside the container -> run the converter with passed args
-    echo "🚀  Running convert_grayscale inside container …"
+    echo "🚀 Running grayscale conversion inside container…"
+
+    # ---------------------------------------------------------------------
+    # Build on first run (or whenever artefacts are missing)
+    if [ ! -f /opt/app/build/convert_grayscale ]; then
+        echo "🔨 Building the application from source …"
+        mkdir -p /opt/app
+        cp -r /opt/app_src/* /opt/app/
+
+        cd /opt/app
+        # wipe any stale cache that might slip in
+        rm -rf build CMakeCache.txt
+
+        chmod +x build.sh
+        ./build.sh           # creates build/ + binaries
+    fi
+
+    # ---------------------------------------------------------------------
     exec /opt/app/build/convert_grayscale "$@"
