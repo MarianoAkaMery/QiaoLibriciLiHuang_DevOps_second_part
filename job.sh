@@ -1,25 +1,47 @@
 #!/bin/bash
 #SBATCH --job-name=grayscale_job
-#SBATCH --output=grayscale_output.log
+#SBATCH --output=grayscale_output_%j.log   # one file per run
+#SBATCH --error=grayscale_error_%j.log
 #SBATCH --time=0:10:00
 #SBATCH --ntasks=1
 #SBATCH --partition=g100_all_serial
-cd "$SLURM_SUBMIT_DIR"
-module load singularity
 
-# optional: keep Singularity scratch off the Lustre metadata servers
+###############################################################################
+# Tiny logging helper + defensive bash flags
+set -euo pipefail
+log () {                              # green lines inside SLURM output
+    printf '\033[1;32m[%s] %s\033[0m\n' "$(date +'%F %T')" "$*"
+}
+[[ "${DEBUG_PIPE:-0}" == "1" ]] && set -x
+trap 'log "Job finished with status $?"'  EXIT
+###############################################################################
+
+log "SLURM node      : $(hostname)"
+log "CWD before  cd  : $(pwd)"
+cd "$SLURM_SUBMIT_DIR"
+log "CWD after   cd  : $(pwd)"
+
+module load singularity
+log "Singularity     : $(singularity --version)"
+
+# keep Singularity tmp away from Lustre MDTs
 export TMPDIR="${HOME}/tmp"
-mkdir -p "${TMPDIR}"
 export SINGULARITY_TMPDIR="${TMPDIR}/singularity_tmp"
 export SINGULARITY_CACHEDIR="${TMPDIR}/singularity_cache"
 mkdir -p "${SINGULARITY_TMPDIR}" "${SINGULARITY_CACHEDIR}"
 
-echo "Running grayscale conversion…"
-singularity run grayscale.sif input output Average \
-  || { echo "❌  Conversion failed"; exit 1; }
+log "▶ Converting sample image …"
+singularity run            \
+  --bind "$PWD":"$PWD"     \
+  --pwd  "$PWD"            \
+  grayscale.sif input output Average \
+  || { log "❌ Conversion failed"; exit 1; }
 
-echo "Running unit tests…"
-singularity exec grayscale.sif /tmp/grayscale_build/build/test_grayscale \
-  || { echo "❌  Tests failed"; exit 2; }
+log "▶ Running unit tests …"
+singularity exec           \
+  --bind "$PWD":"$PWD"     \
+  --pwd  "$PWD"            \
+  grayscale.sif /tmp/grayscale_build/build/test_grayscale \
+  || { log "❌ Tests failed"; exit 2; }
 
-echo "✅  All good!"
+log "✅ All good!"
