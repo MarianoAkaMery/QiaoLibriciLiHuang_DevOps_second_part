@@ -3,29 +3,22 @@ From: ubuntu:22.04
 
 %labels
     Author "Yibo"
-    Version "1.1"   # bumped to show the fix
+    Version "1.2"     # build-in-/tmp fix
 
 %post
-    # -------------------------------------------------------------------------
-    echo "🧱 Installing system dependencies …"
+    echo "🧱 Installing toolchain …"
     apt-get update && apt-get install -y \
         build-essential cmake git libgtest-dev \
         && rm -rf /var/lib/apt/lists/*
 
-    # -------------------------------------------------------------------------
-    echo "⚙️  Building GoogleTest once for the container …"
+    # cache gtest so we don’t rebuild every run
     cd /usr/src/gtest
     cmake -DCMAKE_CXX_FLAGS="-fPIC" .
     make -j"$(nproc)"
     cp lib/libgtest*.a /usr/lib
 
-    # -------------------------------------------------------------------------
-    echo "📦  Creating application directory …"
-    mkdir -p /opt/app
-    # nothing is copied here; sources come via the %files section
-
+    # the project sources are staged here
 %files
-    # copy **only sources & scripts**, NOT the host-side build artefacts
     CMakeLists.txt            /opt/app_src/
     include/                  /opt/app_src/
     src/                      /opt/app_src/
@@ -35,28 +28,24 @@ From: ubuntu:22.04
     convert_ppm.py            /opt/app_src/
     random_gen_images.py      /opt/app_src/
     LICENSE                   /opt/app_src/
-    job.sh                    /opt/app_src/
 
 %environment
-    export PATH=/opt/app/build:$PATH
+    export APP_TMP=/tmp/grayscale_build   # writable workdir
 
 %runscript
-    echo "🚀 Running grayscale conversion inside container…"
+    echo "🚀  Launching grayscale conversion …"
 
-    # ---------------------------------------------------------------------
-    # Build on first run (or whenever artefacts are missing)
-    if [ ! -f /opt/app/build/convert_grayscale ]; then
-        echo "🔨 Building the application from source …"
-        mkdir -p /opt/app
-        cp -r /opt/app_src/* /opt/app/
+    # ------------------------------------------------------------------
+    # Compile once, into a tmp directory that is always writable
+    if [ ! -f "$APP_TMP/build/convert_grayscale" ]; then
+        echo "🔨  First-time build inside container …"
+        mkdir -p  "$APP_TMP"
+        cp -r /opt/app_src/* "$APP_TMP/"
 
-        cd /opt/app
-        # wipe any stale cache that might slip in
+        cd "$APP_TMP"
         rm -rf build CMakeCache.txt
-
         chmod +x build.sh
-        ./build.sh           # creates build/ + binaries
+        ./build.sh
     fi
 
-    # ---------------------------------------------------------------------
-    exec /opt/app/build/convert_grayscale "$@"
+    exec "$APP_TMP/build/convert_grayscale" "$@"
