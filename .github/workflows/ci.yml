@@ -1,14 +1,55 @@
-name: Test Galileo SSH Connection
+name: DevOps Pipeline Test
 
 on:
   push:
     branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
 
 jobs:
-  ssh-test:
+  build-test-containerize:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            cmake g++ make \
+            uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
+            dos2unix curl wget openssh-client
+
+      - name: Install Singularity
+        run: |
+          wget https://github.com/hpcng/singularity/releases/download/v3.8.7/singularity-3.8.7.tar.gz
+          tar -xzf singularity-3.8.7.tar.gz
+          cd singularity-3.8.7
+          ./mconfig && make -C builddir && sudo make -C builddir install
+          cd ..
+
+      - name: Run build script
+        run: ./build.sh
+
+      - name: Run unit tests
+        run: ./build/test_grayscale
+
+      - name: Build Singularity image
+        run: sudo singularity build grayscale.sif Singularity.def
+
+      - name: Upload Singularity image
+        uses: actions/upload-artifact@v4
+        with:
+          name: grayscale.sif
+          path: grayscale.sif
+
+      - name: Prepare job.sh
+        run: dos2unix job.sh || true
+
       - name: Set up SSH key, cert, and config
         run: |
           mkdir -p ~/.ssh
@@ -30,6 +71,10 @@ jobs:
               UserKnownHostsFile=/dev/null
           EOF
 
-      - name: Test SSH Connection
+      - name: Transfer files to Galileo100
         run: |
-          ssh -F ~/.ssh/config galileo "hostname && whoami && date"
+          scp -F ~/.ssh/config grayscale.sif job.sh galileo:~/seproject/
+
+      - name: Submit SLURM job
+        run: |
+          ssh -F ~/.ssh/config galileo "cd ~/seproject && sbatch job.sh"
