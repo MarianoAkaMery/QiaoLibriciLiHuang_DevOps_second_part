@@ -24,11 +24,28 @@ jobs:
             uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
             dos2unix curl wget openssh-client
 
+      - name: Install Singularity
+        run: |
+          wget https://github.com/hpcng/singularity/releases/download/v3.8.7/singularity-3.8.7.tar.gz
+          tar -xzf singularity-3.8.7.tar.gz
+          cd singularity-3.8.7
+          ./mconfig && make -C builddir && sudo make -C builddir install
+          cd ..
+
       - name: Run build script
         run: ./build.sh
 
       - name: Run unit tests
         run: ./build/test_grayscale
+
+      - name: Build Singularity image
+        run: sudo singularity build grayscale.sif Singularity.def
+
+      - name: Upload Singularity image
+        uses: actions/upload-artifact@v4
+        with:
+          name: grayscale.sif
+          path: grayscale.sif
 
       - name: Prepare job.sh
         run: dos2unix job.sh || true
@@ -54,18 +71,16 @@ jobs:
               UserKnownHostsFile=/dev/null
           EOF
 
-      - name: Transfer sources to Galileo100
+      - name: Transfer files to Galileo100
         run: |
-          scp -F ~/.ssh/config Singularity.def job.sh galileo:~/seproject/
-          scp -F ~/.ssh/config -r src/ galileo:~/seproject/
-          scp -F ~/.ssh/config -r build/ galileo:~/seproject/
+          scp -F ~/.ssh/config grayscale.sif job.sh Singularity.def galileo:~/seproject/
 
-      - name: Build Singularity image on Galileo
+      - name: Build image on Galileo100
         run: |
           ssh -F ~/.ssh/config galileo "
             module load singularity &&
             cd ~/seproject &&
-            singularity build grayscale.sif Singularity.def
+            singularity build --force grayscale.sif Singularity.def
           "
 
       - name: Submit SLURM job
@@ -73,24 +88,17 @@ jobs:
           ssh -F ~/.ssh/config galileo "cd ~/seproject && sbatch job.sh"
 
       - name: Wait for SLURM job to complete
-        run: sleep 60
+        run: sleep 90
 
       - name: Download result logs
         run: |
           scp -F ~/.ssh/config galileo:~/seproject/grayscale_output.log .
-          scp -F ~/.ssh/config galileo:~/seproject/test_output.txt .
 
       - name: Show job output in logs
-        run: |
-          echo "===== Grayscale Output ====="
-          cat grayscale_output.log
-          echo "===== Test Output ====="
-          cat test_output.txt
+        run: cat grayscale_output.log
 
-      - name: Upload output logs as artifacts
+      - name: Upload output log as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: output-logs
-          path: |
-            grayscale_output.log
-            test_output.txt
+          name: grayscale_output.log
+          path: grayscale_output.log
