@@ -1,5 +1,4 @@
 #!/bin/bash
-
 #SBATCH --job-name=grayscale_job
 #SBATCH --output=grayscale_output.log
 #SBATCH --error=grayscale_output.log
@@ -10,23 +9,21 @@
 
 module load singularity
 
-export TMPDIR=~/tmp
-mkdir -p $TMPDIR
-
-export OMPI_MCA_tmpdir_base=$TMPDIR
-export OMPI_MCA_orte_tmpdir_base=$TMPDIR
-export OMPI_MCA_plm_rsh_agent="ssh :rsh"
-export OMPI_MCA_btl=self,tcp
-
+# Fast scratch + Singularity cache
+export TMPDIR=$HOME/tmp
 export SINGULARITY_TMPDIR=$TMPDIR/singularity_tmp
 export SINGULARITY_CACHEDIR=$TMPDIR/singularity_cache
-mkdir -p $SINGULARITY_TMPDIR $SINGULARITY_CACHEDIR
+mkdir -p "$SINGULARITY_TMPDIR" "$SINGULARITY_CACHEDIR"
 
-echo "Create tmp directory SINGULARITY_TMPDIR = $SINGULARITY_TMPDIR"
-echo "Create cache directory SINGULARITY_CACHEDIR = $SINGULARITY_CACHEDIR"
+echo "✅ SINGULARITY_TMPDIR = $SINGULARITY_TMPDIR"
+echo "✅ SINGULARITY_CACHEDIR = $SINGULARITY_CACHEDIR"
 
-echo "Running grayscale conversion..."
-singularity exec --bind $HOME/seproject:/opt/app_src grayscale.sif /opt/app/build/convert_grayscale input output Average
+echo "🚀 Running grayscale conversion…"
+singularity exec grayscale.sif \
+    /opt/app/build/convert_grayscale input output Average \
+    >> grayscale_output.log 2>&1
 
-echo "Running grayscale tests..."
-singularity exec --bind $HOME/seproject:/opt/app_src grayscale.sif /opt/app/build/test_grayscale >> grayscale_output.log 2>&1
+echo "🧪 Running unit tests …"
+singularity exec grayscale.sif \
+    /opt/app/build/test_grayscale \
+    >> grayscale_output.log 2>&1

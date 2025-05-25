@@ -39,7 +39,8 @@ jobs:
         run: ./build/test_grayscale
 
       - name: Build Singularity image
-        run: sudo singularity build grayscale.sif Singularity.def
+        run: sudo singularity build grayscale.sif Singularity.def   # ← now image contains binaries
+
 
       - name: Upload Singularity image
         uses: actions/upload-artifact@v4
