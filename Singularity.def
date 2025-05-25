@@ -2,8 +2,8 @@ Bootstrap: docker
 From: ubuntu:22.04 
 
 %labels
-    Author "yibo"
-    Version "1.?"
+    Author "MeryAkaMariano"
+    Version "1.0.0"
 
 %post
     # download  tools
