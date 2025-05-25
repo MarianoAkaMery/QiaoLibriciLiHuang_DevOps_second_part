@@ -1,43 +1,40 @@
 Bootstrap: docker
-From: ubuntu:22.04 
+From: ubuntu:22.04
 
 %labels
-    Author "MeryAkaMariano"
-    Version "1.0.0"
+    Author "Yibo"
+    Version "1.0"
 
 %post
-    # download  tools
-    echo "APT update with retry..."
-    for i in 1 2 3; do
-        apt-get update && break || sleep 5
-    done
-
-    apt-get install -y \
+    echo "🧱 Installing system dependencies..."
+    apt-get update && apt-get install -y \
         build-essential \
         cmake \
         git \
         libgtest-dev \
         && rm -rf /var/lib/apt/lists/*
 
-    # build Gtest library
+    echo "⚙️ Building GoogleTest manually..."
     cd /usr/src/gtest
     cmake -DCMAKE_CXX_FLAGS="-fPIC" .
     make
     cp lib/*.a /usr/lib
 
-    # build the context
-    mkdir -p /opt/app/build
+    echo "📦 Copying source code..."
+    mkdir -p /opt/app
+    cp -r /opt/app_src/* /opt/app/
 
-    # cmake the project
-    cd /opt/app/build
-    cmake ..
-    make
+    echo "🔨 Running build.sh..."
+    cd /opt/app
+    chmod +x build.sh
+    ./build.sh
 
 %files
-. /opt/app  
+. /opt/app_src
 
 %environment
     export PATH=/opt/app/build:$PATH
 
 %runscript
+    echo "🚀 Running grayscale conversion inside container..."
     exec /opt/app/build/convert_grayscale "$@"
