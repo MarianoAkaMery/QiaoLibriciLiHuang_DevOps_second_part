@@ -4,7 +4,7 @@
 #SBATCH --time=0:10:00
 #SBATCH --ntasks=1
 #SBATCH --partition=g100_all_serial
-
+cd "$SLURM_SUBMIT_DIR"
 module load singularity
 
 # optional: keep Singularity scratch off the Lustre metadata servers
