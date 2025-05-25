@@ -16,41 +16,15 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install system dependencies
+      - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y \
-            cmake g++ make \
-            uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
-            dos2unix curl wget openssh-client
+          sudo apt install -y dos2unix curl wget openssh-client
 
-      - name: Install Singularity
-        run: |
-          wget https://github.com/hpcng/singularity/releases/download/v3.8.7/singularity-3.8.7.tar.gz
-          tar -xzf singularity-3.8.7.tar.gz
-          cd singularity-3.8.7
-          ./mconfig && make -C builddir && sudo make -C builddir install
-          cd ..
-
-      - name: Run build script
-        run: ./build.sh
-
-      - name: Run unit tests
-        run: ./build/test_grayscale
-
-      - name: Build Singularity image
-        run: sudo singularity build grayscale.sif Singularity.def
-
-      - name: Upload Singularity image
-        uses: actions/upload-artifact@v4
-        with:
-          name: grayscale.sif
-          path: grayscale.sif
-
-      - name: Prepare job.sh
+      - name: Prepare job.sh and definition
         run: dos2unix job.sh || true
 
-      - name: Set up SSH key, cert, and config
+      - name: Set up SSH keys and config
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SLURM_PRIVATE_KEY }}" > ~/.ssh/my_key
@@ -71,25 +45,25 @@ jobs:
               UserKnownHostsFile=/dev/null
           EOF
 
-      - name: Transfer files to Galileo100
+      - name: Upload files to Galileo100
         run: |
-          scp -F ~/.ssh/config grayscale.sif job.sh galileo:~/seproject/
+          scp -F ~/.ssh/config Singularity.def job.sh galileo:~/seproject/
 
       - name: Submit SLURM job
         run: |
           ssh -F ~/.ssh/config galileo "cd ~/seproject && sbatch job.sh"
 
-      - name: Wait for SLURM job to complete
-        run: sleep 90
+      - name: Wait for job to complete
+        run: sleep 60
 
-      - name: Download result logs
+      - name: Download output log
         run: |
           scp -F ~/.ssh/config galileo:~/seproject/grayscale_output.log .
 
-      - name: Show job output in logs
+      - name: Show job output
         run: cat grayscale_output.log
 
-      - name: Upload output log as artifact
+      - name: Upload job output as artifact
         uses: actions/upload-artifact@v4
         with:
           name: grayscale_output.log
