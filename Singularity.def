@@ -3,11 +3,10 @@ From: ubuntu:22.04
 
 %labels
     Author "yibo"
-    Version "1.?"
+    Version "1.0"
 
 %post
-    # download  tools
-    echo "APT update with retry..."
+    echo "Updating APT and installing dependencies..."
     for i in 1 2 3; do
         apt-get update && break || sleep 5
     done
@@ -19,22 +18,20 @@ From: ubuntu:22.04
         libgtest-dev \
         && rm -rf /var/lib/apt/lists/*
 
-    # build Gtest library
+    echo "Building Google Test..."
     cd /usr/src/gtest
     cmake -DCMAKE_CXX_FLAGS="-fPIC" .
     make
     cp lib/*.a /usr/lib
 
-    # build the context
+    echo "Building the application..."
     mkdir -p /opt/app/build
-
-    # cmake the project
     cd /opt/app/build
     cmake ..
     make
 
 %files
-. /opt/app  
+. /opt/app
 
 %environment
     export PATH=/opt/app/build:$PATH
