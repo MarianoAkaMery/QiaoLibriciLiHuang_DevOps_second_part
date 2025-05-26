@@ -31,7 +31,12 @@ From: ubuntu:22.04
     make
 
 %files
-. /opt/app
+CMakeLists.txt /opt/app
+src /opt/app/src
+include /opt/app/include
+input /opt/app/input
+test /opt/app/test
+job.sh /opt/app
 
 %environment
     export PATH=/opt/app/build:$PATH
