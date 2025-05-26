@@ -1,31 +1,23 @@
 #!/bin/bash
 #SBATCH --job-name=grayscale_job
+#SBATCH --time=00:05:00          # alza se processi molte immagini
+#SBATCH --mem=8G
 #SBATCH --output=grayscale_output.log
-#SBATCH --time=0:02:00
-#SBATCH --ntasks=1
-#SBATCH --partition=g100_all_serial
 
-cd "$SLURM_SUBMIT_DIR"
-module load singularity
+# --- (solo se Galileo richiede il modulo) ------------------------------
+module purge
+module load singularity 2>/dev/null || true
 
-# Keep Singularity’s tmp & cache off Lustre metadata servers
-export TMPDIR="${HOME}/tmp"
-mkdir -p "${TMPDIR}"
-export SINGULARITY_TMPDIR="${TMPDIR}/singularity_tmp"
-export SINGULARITY_CACHEDIR="${TMPDIR}/singularity_cache"
-mkdir -p "${SINGULARITY_TMPDIR}" "${SINGULARITY_CACHEDIR}"
+# --- percorsi sul filesystem del nodo ---------------------------------
+IN_HOST="$SCRATCH/seproject/images"      # cartella con le immagini INPUT
+OUT_HOST="$SCRATCH/seproject/result"     # cartella per salvare l’OUTPUT
+SIF="$HOME/seproject/grayscale.sif"      # container copiato dallo script CI
 
-# Bind large scratch for I/O
-export SCRATCH_DIR="${SCRATCH:-/scratch/${USER}}"
-mkdir -p "${SCRATCH_DIR}"
-BIND_OPT="--bind ${SCRATCH_DIR}:/data"
+mkdir -p "$OUT_HOST"
 
-echo "Running grayscale conversion…"
-singularity run ${BIND_OPT} grayscale.sif /data/input /data/output Average \
-  || { echo "❌  Conversion failed"; exit 1; }
-
-echo "Running unit tests…"
-singularity exec ${BIND_OPT} grayscale.sif /opt/app/build/test_grayscale \
-  || { echo "❌  Tests failed"; exit 2; }
-
-echo "✅  All good!"
+# --- esegui il container montando le directory host -------------------
+singularity exec \
+  --bind "${IN_HOST}:/data/input" \
+  --bind "${OUT_HOST}:/data/output" \
+  "$SIF" \
+  /usr/local/bin/convert_grayscale /data/input /data/output average

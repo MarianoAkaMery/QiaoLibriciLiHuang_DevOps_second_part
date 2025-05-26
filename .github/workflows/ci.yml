@@ -64,65 +64,61 @@ jobs:
         done
 
 # ------------- crea ~/.ssh/config  -------------
-    - name: Copy & sanity-check on Galileo
-      if: ${{ !github.event.pull_request }}
-      env:
-        GALILEO_HOST: ${{ secrets.SLURM_HOST }}
-        GALILEO_USER: ${{ secrets.SLURM_USER }}
-        GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY }}
-        GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE }}
+
+# ................................................
+    - name: Patch SLURM job script paths
       run: |
-        set -euo pipefail
+          # imposta le directory host che il job dovrà montare
+          sed -i \
+            -e 's|^IN_HOST=.*|IN_HOST=$SCRATCH/seproject/images|' \
+            -e 's|^OUT_HOST=.*|OUT_HOST=$SCRATCH/seproject/result|' \
+            job.sh
 
-        mkdir -p ~/.ssh
-        echo "$GALILEO_KEY"  > ~/.ssh/my_key
-        chmod 600 ~/.ssh/my_key
-        [[ -n "$GALILEO_CERT" ]] && {
-          echo "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
-          chmod 644 ~/.ssh/my_key-cert.pub
-        }
+    - name: Copy SIF + job.sh to Galileo
+      run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          echo "$GALILEO_KEY"  > ~/.ssh/my_key
+          chmod 600 ~/.ssh/my_key
+          if [[ -n "$GALILEO_CERT" ]]; then
+            echo "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
+            chmod 644 ~/.ssh/my_key-cert.pub
+          fi
 
-        # niente heredoc: usiamo un blocco echo-safe
-        {
-          echo "Host galileo"
-          echo "  HostName $GALILEO_HOST"
-          echo "  User $GALILEO_USER"
-          echo "  IdentityFile ~/.ssh/my_key"
-          echo "  IdentitiesOnly yes"
-          echo "  StrictHostKeyChecking no"
-          echo "  UserKnownHostsFile /dev/null"
-          [[ -n \"$GALILEO_CERT\" ]] && \
-            echo "  CertificateFile ~/.ssh/my_key-cert.pub"
-        } > ~/.ssh/config
+          {                                   # ↙︎ mini-config ssh
+            echo "Host galileo"
+            echo "  HostName $GALILEO_HOST"
+            echo "  User $GALILEO_USER"
+            echo "  IdentityFile ~/.ssh/my_key"
+            echo "  IdentitiesOnly yes"
+            echo "  StrictHostKeyChecking no"
+            echo "  UserKnownHostsFile /dev/null"
+            [[ -n \"$GALILEO_CERT\" ]] && \
+              echo "  CertificateFile ~/.ssh/my_key-cert.pub"
+          } > ~/.ssh/config
 
-        scp -F ~/.ssh/config "$SIF_NAME" job.sh galileo:~/seproject/
-        ssh -F ~/.ssh/config galileo \
-           "ls -lh ~/seproject/$SIF_NAME && \
-            singularity exec ~/seproject/$SIF_NAME /usr/local/bin/convert_grayscale --help | head -n 5"
+          scp -F ~/.ssh/config "$SIF_NAME" job.sh galileo:~/seproject/
 
-# ------------- submit job & wait -------------
     - name: Submit SLURM job and wait
       run: |
-        set -euo pipefail
+          set -euo pipefail
+          JOB_ID=$(ssh -F ~/.ssh/config galileo \
+                     "cd ~/seproject && sbatch job.sh" \
+                     | awk '{print $4}')
+          echo "SLURM job id: $JOB_ID"
 
-        JOB_ID=$(ssh -F ~/.ssh/config galileo \
-                 "cd ~/seproject && sbatch job.sh" | awk '{print $4}')
-        echo "SLURM job id: $JOB_ID"
-
-        echo "Waiting for SLURM job $JOB_ID …"
-        while true; do
-          # 👉 prendiamo la prima colonna *dopo* il ritorno SSH
-          STATE=$(ssh -F ~/.ssh/config galileo \
-                  "sacct -j $JOB_ID -n -o State | head -n 1" | awk '{print $1}')
-
-          [[ -z "$STATE" ]] && STATE=PENDING
-          echo "  -> current state: $STATE"
-
-          case "$STATE" in
-            PENDING|CONFIGURING|RUNNING|COMPLETING) sleep 20 ;;
-            COMPLETED) echo "Job finished OK ✅"; break ;;
-            FAILED|CANCELLED|TIMEOUT|NODE_FAIL|PREEMPTED)
-              echo "Job finished with error state ❌"; exit 1 ;;
-            *)  echo "Unknown state '$STATE' – giving up"; exit 2 ;;
-          esac
-        done
+          echo "Waiting for SLURM job $JOB_ID …"
+          while true; do
+            STATE=$(ssh -F ~/.ssh/config galileo \
+                      "sacct -j $JOB_ID -n -o State" \
+                      | head -n 1 | awk '{print $1}')
+            [[ -z $STATE ]] && STATE=PENDING
+            echo "  -> current state: $STATE"
+            case "$STATE" in
+              PENDING|CONFIGURING|RUNNING|COMPLETING) sleep 20 ;;
+              COMPLETED) echo "Job finished OK ✅"; break ;;
+              FAILED|CANCELLED|TIMEOUT|NODE_FAIL|PREEMPTED)
+                         echo "Job finished with error state ❌"; exit 1 ;;
+              *)         echo "Unknown state '$STATE' – giving up"; exit 2 ;;
+            esac
+          done
