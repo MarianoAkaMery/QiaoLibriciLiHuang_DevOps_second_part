@@ -26,11 +26,9 @@ jobs:
 
       - name: Install Singularity
         run: |
-          wget https://github.com/hpcng/singularity/releases/download/v3.11.4/singularity-3.11.4.tar.gz
-          tar -xzf singularity-3.11.4.tar.gz
-          cd singularity-3.11.4
-          ./mconfig && make -C builddir && sudo make -C builddir install
-          cd ..
+          sudo apt-get update
+          sudo apt-get install -y singularity-container
+
 
       - name: Run build script
         run: ./build.sh
