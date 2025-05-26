@@ -48,15 +48,10 @@ jobs:
       - name: Build Singularity Image (with clean context)
         run: |
           mkdir singularity_context
-          cp -r CMakeLists.txt Singularity.def job.sh src include input test singularity_context/
+          cp -r CMakeLists.txt Singularity.def job.sh singularity_context/
+          cp -r src include input test singularity_context/ || echo "Some folders missing"
           cd singularity_context
           sudo singularity build "../${SIF_NAME}" Singularity.def
-
-      - name: Upload SIF Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.SIF_NAME }}-${{ github.sha }}.sif
-          path: ${{ env.SIF_NAME }}
 
       # ------------------------------------------------
       # 3) Transfer to Galileo and Submit Job
