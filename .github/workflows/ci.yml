@@ -33,7 +33,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y singularity-container
-        
+
       - name: Clean up build folder before image build
         run: rm -rf build   
 
@@ -43,10 +43,14 @@ jobs:
           ./build/test_grayscale
 
       # ------------------------------------------------
-      # 2) Containerize
+      # 2) Containerize (with isolated context)
       # ------------------------------------------------
-      - name: Build Singularity Image
-        run: sudo singularity build "$SIF_NAME" Singularity.def
+      - name: Build Singularity Image (with clean context)
+        run: |
+          mkdir singularity_context
+          cp -r CMakeLists.txt Singularity.def job.sh src include input test singularity_context/
+          cd singularity_context
+          sudo singularity build "../${SIF_NAME}" Singularity.def
 
       - name: Upload SIF Artifact
         uses: actions/upload-artifact@v4
@@ -99,10 +103,10 @@ jobs:
             EOF
             [[ -n "$GALILEO_CERT" ]] && echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
 
-            # Transfer all needed files to Galileo
+            # Transfer image and input files
             scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
 
-            # Check if image works
+            # Check if container is functional
             ssh -F ~/.ssh/config galileo "
               ls -lh ~/seproject/$SIF_NAME
               singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo 'Binary missing'
