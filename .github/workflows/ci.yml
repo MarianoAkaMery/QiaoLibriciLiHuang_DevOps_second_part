@@ -93,17 +93,17 @@ jobs:
             IdentitiesOnly yes
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
-EOF
-          [[ -n "$GALILEO_CERT" ]] && echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
+            EOF
+            [[ -n "$GALILEO_CERT" ]] && echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
 
-          # Transfer all needed files to Galileo
-          scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
+            # Transfer all needed files to Galileo
+            scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
 
-          # Check if image works
-          ssh -F ~/.ssh/config galileo "
-            ls -lh ~/seproject/$SIF_NAME
-            singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo 'Binary missing'
-          "
+            # Check if image works
+            ssh -F ~/.ssh/config galileo "
+              ls -lh ~/seproject/$SIF_NAME
+              singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo 'Binary missing'
+            "
 
       - name: Submit SLURM job and wait
         if: ${{ !github.event.pull_request }}
