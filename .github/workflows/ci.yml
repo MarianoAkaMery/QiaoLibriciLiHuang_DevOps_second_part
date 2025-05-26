@@ -1,4 +1,5 @@
-name: DevOps Pipeline
+
+name: DevOps Pipeline Test
 
 on:
   push:
@@ -6,111 +7,83 @@ on:
   pull_request:
     branches: [ main, master ]
 
-env:
-  DEBUG_PIPE: 1          # enables bash tracing everywhere
-
 jobs:
   build-test-containerize:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
-      - name: Checkout repository (with submodules)
-        uses: actions/checkout@v4
+      - name: Checkout code with submodules
+        uses: actions/checkout@v3
         with:
           submodules: recursive
 
-      - name: Install build dependencies
+      - name: Install system dependencies
         run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y \
+          sudo apt update
+          sudo apt install -y \
             cmake g++ make \
             uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
             dos2unix curl wget openssh-client
-
-      - name: Install Singularity 3.8.7
+      - name: Install Singularity
         run: |
-          set -euo pipefail
-          wget -q https://github.com/hpcng/singularity/releases/download/v3.8.7/singularity-3.8.7.tar.gz
+          wget https://github.com/hpcng/singularity/releases/download/v3.8.7/singularity-3.8.7.tar.gz
           tar -xzf singularity-3.8.7.tar.gz
           cd singularity-3.8.7
-          ./mconfig
-          make -C builddir
-          sudo make -C builddir install
-          singularity --version
-
-      - name: Build native binaries
+          ./mconfig && make -C builddir && sudo make -C builddir install
+          cd ..
+      - name: Run build script
         run: ./build.sh
 
-      - name: Run host unit tests
+      - name: Run unit tests
         run: ./build/test_grayscale
 
       - name: Build Singularity image
-        run: |
-          sudo singularity build grayscale.sif Singularity.def
-          sha256sum grayscale.sif
+        run: sudo singularity build grayscale.sif Singularity.def
 
       - name: Upload Singularity image
         uses: actions/upload-artifact@v4
         with:
           name: grayscale.sif
           path: grayscale.sif
-          retention-days: 5
 
-      - name: Prepare scripts for POSIX line endings
-        run: dos2unix job.sh Singularity.def || true
+      - name: Prepare job.sh
+        run: dos2unix job.sh || true
 
-      - name: Configure SSH for Galileo100
-        env:
-          SLURM_HOST: ${{ secrets.SLURM_HOST }}
-          SLURM_USER: ${{ secrets.SLURM_USER }}
-          SSH_PRIV:  ${{ secrets.SLURM_PRIVATE_KEY }}
-          SSH_PUB:   ${{ secrets.SSH_PUBLIC_KEY }}
-          SSH_CERT:  ${{ secrets.SSH_CERTIFICATE }}
+      - name: Set up SSH key, cert, and config
         run: |
-          set -euo pipefail
           mkdir -p ~/.ssh
-          echo "$SSH_PRIV"  > ~/.ssh/id_ed25519
-          echo "$SSH_PUB"   > ~/.ssh/id_ed25519.pub
-          echo "$SSH_CERT"  > ~/.ssh/id_ed25519-cert.pub
-          chmod 600 ~/.ssh/id_ed25519
-          chmod 644 ~/.ssh/id_ed25519.pub ~/.ssh/id_ed25519-cert.pub
-
-          cat > ~/.ssh/config <<EOF
+          echo "${{ secrets.SLURM_PRIVATE_KEY }}" > ~/.ssh/my_key
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/my_key.pub
+          echo "${{ secrets.SSH_CERTIFICATE }}" > ~/.ssh/my_key-cert.pub
+          chmod 600 ~/.ssh/my_key
+          chmod 644 ~/.ssh/my_key.pub ~/.ssh/my_key-cert.pub
+          cat <<EOF > ~/.ssh/config
           Host galileo
-              HostName $SLURM_HOST
-              User $SLURM_USER
-              IdentityFile ~/.ssh/id_ed25519
-              CertificateFile ~/.ssh/id_ed25519-cert.pub
+              HostName ${{ secrets.SLURM_HOST }}
+              User ${{ secrets.SLURM_USER }}
+              IdentityFile ~/.ssh/my_key
+              CertificateFile ~/.ssh/my_key-cert.pub
               IdentitiesOnly yes
               StrictHostKeyChecking no
-              UserKnownHostsFile /dev/null
+              UserKnownHostsFile=/dev/null
           EOF
-
-      - name: Copy artefacts to Galileo100
+      - name: Transfer files to Galileo100
         run: |
-          scp -F ~/.ssh/config grayscale.sif job.sh Singularity.def galileo:~/seproject/
-
+          scp -F ~/.ssh/config grayscale.sif job.sh galileo:~/seproject/
       - name: Submit SLURM job
         run: |
           ssh -F ~/.ssh/config galileo "cd ~/seproject && sbatch job.sh"
+      - name: Wait for SLURM job to complete
+        run: sleep 90
 
-      - name: Wait for SLURM job to finish
-        run: sleep 60
-
-      - name: Fetch SLURM logs
+      - name: Download result logs
         run: |
-          scp -F ~/.ssh/config galileo:~/seproject/grayscale_output_*.log .
-          ls -l grayscale_output_*.log
+          scp -F ~/.ssh/config galileo:~/seproject/grayscale_output.log .
+      - name: Show job output in logs
+        run: cat grayscale_output.log
 
-      - name: Show job output
-        if: always()
-        run: cat grayscale_output_*.log || true
-
-      - name: Upload SLURM logs
-        if: always()
+      - name: Upload output log as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: slurm-logs
-          path: grayscale_output_*.log
+          name: grayscale_output.log
+          path: grayscale_output.log
