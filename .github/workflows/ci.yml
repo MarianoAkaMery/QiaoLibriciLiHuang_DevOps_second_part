@@ -27,7 +27,7 @@ jobs:
           sudo apt install -y \
             cmake g++ make \
             uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
-            dos2unix curl wget openssh-client
+            dos2unix curl wget openssh-client tree
 
       - name: Install Singularity
         run: |
@@ -47,11 +47,28 @@ jobs:
       # ------------------------------------------------
       - name: Build Singularity Image (with clean context)
         run: |
+          echo "Creating clean container build context..."
           mkdir singularity_context
-          cp -r CMakeLists.txt Singularity.def job.sh singularity_context/
-          cp -r src include input test singularity_context/ || echo "Some folders missing"
+          cp CMakeLists.txt Singularity.def job.sh singularity_context/
+          for dir in src include input test; do
+            if [ -d "$dir" ]; then
+              cp -r "$dir" singularity_context/
+            else
+              echo "⚠️ Warning: Directory '$dir' not found. Skipping..."
+            fi
+          done
+
+          echo "--- Singularity context structure ---"
+          tree singularity_context
+
           cd singularity_context
           sudo singularity build "../${SIF_NAME}" Singularity.def
+
+      - name: Upload SIF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.SIF_NAME }}-${{ github.sha }}.sif
+          path: ${{ env.SIF_NAME }}
 
       # ------------------------------------------------
       # 3) Transfer to Galileo and Submit Job
@@ -95,17 +112,17 @@ jobs:
             IdentitiesOnly yes
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
-            EOF
-            [[ -n "$GALILEO_CERT" ]] && echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
+EOF
+          [[ -n "$GALILEO_CERT" ]] && echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
 
-            # Transfer image and input files
-            scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
+          echo "Transferring files to Galileo..."
+          scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
 
-            # Check if container is functional
-            ssh -F ~/.ssh/config galileo "
-              ls -lh ~/seproject/$SIF_NAME
-              singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo 'Binary missing'
-            "
+          echo "Checking container and entrypoint..."
+          ssh -F ~/.ssh/config galileo "
+            ls -lh ~/seproject/$SIF_NAME
+            singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo '⚠️ Binary not found inside container'
+          "
 
       - name: Submit SLURM job and wait
         if: ${{ !github.event.pull_request }}
