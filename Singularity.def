@@ -1,45 +1,17 @@
-# ===========================================================================
-#  Singularity/Apptainer definition for the grayscale converter
-#  -------------------------------------------------------------
-#  This version **assumes** the executable (built by GitHub CI) is copied
-#  into the build context next to this file as `convert_grayscale`.
-#  The recipe therefore only needs to install the C++ runtime and place the
-#  binary on the PATH – no compiling happens inside the container.
-# ===========================================================================
-
 Bootstrap: docker
 From: ubuntu:24.04
 
-%labels
-    Author      "Your Name <you@example.com>"
-    Version     "1.0"
-    Description "Pre‑built grayscale converter binary"
-
-# ---------------------------------------------------------------------------
-# Copy the executable produced by the CI build into the image
-# ---------------------------------------------------------------------------
-%files
-    convert_grayscale  /usr/local/bin/convert_grayscale
-
-# ---------------------------------------------------------------------------
-# Minimal runtime dependencies – the C++ standard library
-# ---------------------------------------------------------------------------
 %post
-    set -euo pipefail
-    apt-get update && \
-    apt-get install -y --no-install-recommends libstdc++6 && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    # Only the C++ runtime is needed to run the pre‑built binary
+    apt-get update && apt-get install -y --no-install-recommends \
+        libstdc++6 \
+        && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# ---------------------------------------------------------------------------
-# Ensure the binary is on the PATH when the container starts
-# ---------------------------------------------------------------------------
-%environment
-    PATH="/usr/local/bin:$PATH"
-    export PATH
+# Copy the executable that CI just built.
+# It lives in build/ once ./build.sh completes.
+%files
+    build/convert_grayscale /usr/local/bin/convert_grayscale
 
-# ---------------------------------------------------------------------------
-# Default action when the image is executed with `singularity run image.sif`
-# ---------------------------------------------------------------------------
 %runscript
-    #!/bin/sh
+    # Make the image directly runnable – pass any CLI args through.
     exec /usr/local/bin/convert_grayscale "$@"
