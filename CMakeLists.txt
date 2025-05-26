@@ -17,7 +17,10 @@ add_library(image_processing src/image_processing.cpp)
 # The test executable
 add_executable(test_grayscale test/test_image_processing.cpp)
 add_executable(convert_grayscale src/main.cpp)
+
+# Link libraries
 target_link_libraries(test_grayscale image_processing gtest_main)
+target_link_libraries(convert_grayscale image_processing stdc++fs)
 
 # Add tests
 include(GoogleTest)
