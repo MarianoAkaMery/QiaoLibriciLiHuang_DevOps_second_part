@@ -1,41 +1,26 @@
 Bootstrap: docker
-From: ubuntu:22.04
 
-%labels
-    Author "Yibo"
-    Version "1.1"
-
+Stage: builder
+From: ubuntu:24.04
 %post
-    echo "🧱  Installing system deps …"
-    apt-get update && apt-get install -y \
-        build-essential cmake git libgtest-dev \
-        && rm -rf /var/lib/apt/lists/*
-
-    echo "⚙️  Building GoogleTest manually …"
-    cd /usr/src/gtest
-    cmake -DCMAKE_CXX_FLAGS="-fPIC" .
-    make -j$(nproc)
-    cp lib/*.a /usr/lib
-
-    echo "📦  Copying application sources …"
-    mkdir -p /opt/app
-    cp -r /opt/app_src/* /opt/app/
-
-    echo "🔨  Configuring & compiling application …"
-    cd /opt/app
-    chmod +x build.sh
-    ./build.sh            # produces build/convert_grayscale & build/test_grayscale
-
-    # -- optional: slim the image (~120 MB smaller)
-    apt-get purge -y git libgtest-dev && apt-get autoremove -y
-
-%files
-. /opt/app_src           # context from the repo pushed by the GH runner
-
+  set -eux
+  apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake
+  cd /opt/src && ./build.sh            # your existing script
+  apt-get purge -y build-essential cmake
+  apt-get autoremove -y
+  apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 %environment
-    export PATH=/opt/app/build:$PATH   # make binaries callable directly
+  PATH=/opt/app/build:$PATH
+%labels
+  Maintainer="you@example.com"
 
+Stage: runtime
+From: ubuntu:24.04
+%files from builder /opt/app/build /opt/app/
+%post
+  set -eux
+  apt-get update && apt-get install -y --no-install-recommends libstdc++6
+  apt-get clean && rm -rf /var/lib/apt/lists/*
 %runscript
-    # Default action inside the container → run converter with passed args
-    echo "🚀  Running convert_grayscale inside container …"
-    exec /opt/app/build/convert_grayscale "$@"
+  exec /opt/app/build/convert_grayscale "$@"
