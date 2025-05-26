@@ -80,10 +80,34 @@ jobs:
       - name: Wait for SLURM job to finish
         run: |
           JOB=${{ steps.submit.outputs.job_id }}
-          while ssh -F ~/.ssh/config galileo "squeue -j $JOB -h" >/dev/null; do
-            sleep 15
+          echo "Waiting for SLURM job $JOB …"
+          while true; do
+            STATE=$(ssh -F ~/.ssh/config galileo 2>/dev/null \
+                    "sacct -j $JOB -n -o State | head -n 1 | awk '{print \$1}'")
+            # sacct can lag for a few seconds right after submission
+            if [ -z "$STATE" ] ; then
+              STATE=PENDING
+            fi
+            echo "  -> current state: $STATE"
+            case "$STATE" in
+              PENDING|CONFIGURING|RUNNING|COMPLETING)
+                sleep 20
+                ;;
+              COMPLETED)
+                echo "Job finished OK ✅"
+                break
+                ;;
+              FAILED|CANCELLED|TIMEOUT|NODE_FAIL|PREEMPTED)
+                echo "Job finished with error state ❌"
+                exit 1
+                ;;
+              *)
+                echo "Unknown state '$STATE' – giving up"
+                exit 2
+                ;;
+            esac
           done
-          ssh -F ~/.ssh/config galileo "sacct -j $JOB --format=State,ExitCode"
+
 
       - name: Download result logs
         run: |
