@@ -7,8 +7,10 @@ on:
     branches: [ master, main ]
 
 jobs:
-  build-test-containerize:
+  build-test-deploy:
     runs-on: ubuntu-latest
+    env:
+      SIF_NAME: grayscale.sif
 
     steps:
       - name: Checkout code with submodules
@@ -16,62 +18,112 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install system dependencies
+      # ------------------------------------------------
+      # 1) Build & test
+      # ------------------------------------------------
+      - name: Install build dependencies
         run: |
           sudo apt update
           sudo apt install -y \
             cmake g++ make \
             uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
-            sshpass dos2unix curl wget
-
-      - name: Install Go (for Singularity build)
-        run: |
-          wget -O go.tar.gz https://dl.google.com/go/go1.17.3.linux-amd64.tar.gz
-          sudo tar -C /usr/local -xzf go.tar.gz
-          echo "/usr/local/go/bin" >> $GITHUB_PATH
+            dos2unix curl wget openssh-client
 
       - name: Install Singularity
         run: |
-          wget https://github.com/hpcng/singularity/releases/download/v3.8.7/singularity-3.8.7.tar.gz
-          tar -xzf singularity-3.8.7.tar.gz
-          cd singularity-3.8.7
-          ./mconfig && make -C builddir && sudo make -C builddir install
-          cd ..
+          sudo apt-get update
+          sudo apt-get install -y singularity-container
 
-      - name: Run build script
-        run: ./build.sh
-
-      - name: Run unit tests
-        run: ./build/test_grayscale
-
-      - name: Build Singularity image
+      - name: Build and test
         run: |
-          sudo singularity build grayscale.sif Singularity.def
+          ./build.sh
+          ./build/test_grayscale
 
-      - name: Upload .sif image
+      # ------------------------------------------------
+      # 2) Containerize
+      # ------------------------------------------------
+      - name: Build Singularity Image
+        run: sudo singularity build "$SIF_NAME" Singularity.def
+
+      - name: Upload SIF Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: grayscale.sif
-          path: grayscale.sif
+          name: ${{ env.SIF_NAME }}-${{ github.sha }}.sif
+          path: ${{ env.SIF_NAME }}
 
-      - name: Prepare job.sh
-        run: dos2unix job.sh || true
-
-      - name: Add remote cluster to known_hosts
+      # ------------------------------------------------
+      # 3) Transfer to Galileo and Submit Job
+      # ------------------------------------------------
+      - name: Verify Galileo Secrets
+        if: ${{ !github.event.pull_request }}
+        env:
+          GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
+          GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
+          GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY || secrets.GALILEO_KEY }}
+          GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE || secrets.GALILEO_CERT }}
         run: |
+          for var in GALILEO_HOST GALILEO_USER GALILEO_KEY; do
+            if [[ -z "${!var}" ]]; then
+              echo "::error::$var is not set"; exit 1
+            fi
+          done
+
+      - name: Copy and check on Galileo
+        if: ${{ !github.event.pull_request }}
+        env:
+          GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
+          GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
+          GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY || secrets.GALILEO_KEY }}
+          GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE || secrets.GALILEO_CERT }}
+          SIF_NAME: grayscale.sif
+        run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.SLURM_HOST }} >> ~/.ssh/known_hosts
+          echo "$GALILEO_KEY" > ~/.ssh/my_key
+          chmod 600 ~/.ssh/my_key
+          if [[ -n "$GALILEO_CERT" ]]; then
+            echo "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
+            chmod 644 ~/.ssh/my_key-cert.pub
+          fi
+          cat > ~/.ssh/config <<EOF
+          Host galileo
+            HostName $GALILEO_HOST
+            User $GALILEO_USER
+            IdentityFile ~/.ssh/my_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+EOF
+          [[ -n "$GALILEO_CERT" ]] && echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
 
-      - name: Transfer files to Galileo100
-        run: |
-          sshpass -p "${{ secrets.SLURM_PASSWORD }}" scp \
-            -o StrictHostKeyChecking=no \
-            grayscale.sif job.sh \
-            ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }}:~/seproject/
+          # Transfer all needed files to Galileo
+          scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
 
-      - name: Submit SLURM job
+          # Check if image works
+          ssh -F ~/.ssh/config galileo "
+            ls -lh ~/seproject/$SIF_NAME
+            singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo 'Binary missing'
+          "
+
+      - name: Submit SLURM job and wait
+        if: ${{ !github.event.pull_request }}
+        env:
+          GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
+          GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
         run: |
-          sshpass -p "${{ secrets.SLURM_PASSWORD }}" ssh \
-            -o StrictHostKeyChecking=no \
-            ${{ secrets.SLURM_USER }}@${{ secrets.SLURM_HOST }} \
-            "cd ~/seproject && sbatch job.sh"
+          set -euo pipefail
+          JOB_ID=$(ssh -F ~/.ssh/config galileo "cd ~/seproject && sbatch job.sh" | awk '{print $4}')
+          echo "SLURM job id: $JOB_ID"
+          echo "Waiting for SLURM job $JOB_ID …"
+          while true; do
+            STATE=$(ssh -F ~/.ssh/config galileo "sacct -j $JOB_ID -n -o State | head -n 1 | awk '{print \$1}'")
+            [[ -z "$STATE" ]] && STATE=PENDING
+            echo "  -> current state: $STATE"
+            case "$STATE" in
+              PENDING|CONFIGURING|RUNNING|COMPLETING) sleep 20 ;;
+              COMPLETED) echo "Job finished OK ✅"; break ;;
+              FAILED|CANCELLED|TIMEOUT|NODE_FAIL|PREEMPTED)
+                echo "Job finished with error state ❌"; exit 1 ;;
+              *)  echo "Unknown state '$STATE' – giving up"; exit 2 ;;
+            esac
+          done

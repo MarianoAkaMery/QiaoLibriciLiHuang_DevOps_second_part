@@ -1,23 +1,18 @@
 #!/bin/bash
-#SBATCH --job-name=grayscale_job
-#SBATCH --time=00:05:00          # alza se processi molte immagini
-#SBATCH --mem=8G
-#SBATCH --output=grayscale_output.log
+#SBATCH --job-name=grayscale_convert
+#SBATCH --output=output.log
+#SBATCH --error=error.log
+#SBATCH --time=00:10:00
+#SBATCH --partition=cpu
+#SBATCH --ntasks=1
 
-# --- (solo se Galileo richiede il modulo) ------------------------------
-module purge
-module load singularity 2>/dev/null || true
+module load singularity
 
-# --- percorsi sul filesystem del nodo ----------------------------------
-IN_HOST="$SCRATCH/seproject/images"      # cartella con le immagini INPUT
-OUT_HOST="$SCRATCH/seproject/result"     # cartella per salvare l’OUTPUT
-SIF="$HOME/seproject/grayscale.sif"      # container copiato dallo script CI
+# Make sure output dir exists
+mkdir -p /opt/app/output
 
-mkdir -p "$OUT_HOST"
-
-# --- esegui il container montando le directory host ---------------------
-singularity exec \
-  --bind "${IN_HOST}:/data/input" \
-  --bind "${OUT_HOST}:/data/output" \
-  "$SIF" \
-  /usr/local/bin/convert_grayscale /data/input /data/output Average
+# Run the grayscale converter
+singularity exec grayscale.sif \
+  /opt/app/build/convert_grayscale \
+  /opt/app/input/symmetric_1.ppm \
+  /opt/app/output/result_1.pgm
