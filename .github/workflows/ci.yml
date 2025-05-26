@@ -112,17 +112,17 @@ jobs:
             IdentitiesOnly yes
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
-EOF
-          [[ -n "$GALILEO_CERT" ]] && echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
+            EOF
+                      [[ -n "$GALILEO_CERT" ]] && echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
 
-          echo "Transferring files to Galileo..."
-          scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
+                      echo "Transferring files to Galileo..."
+                      scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
 
-          echo "Checking container and entrypoint..."
-          ssh -F ~/.ssh/config galileo "
-            ls -lh ~/seproject/$SIF_NAME
-            singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo '⚠️ Binary not found inside container'
-          "
+                      echo "Checking container and entrypoint..."
+                      ssh -F ~/.ssh/config galileo "
+                        ls -lh ~/seproject/$SIF_NAME
+                        singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo '⚠️ Binary not found inside container'
+                      "
 
       - name: Submit SLURM job and wait
         if: ${{ !github.event.pull_request }}
