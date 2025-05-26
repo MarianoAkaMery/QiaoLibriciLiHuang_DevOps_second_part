@@ -1,26 +1,45 @@
+# ===========================================================================
+#  Singularity/Apptainer definition for the grayscale converter
+#  -------------------------------------------------------------
+#  This version **assumes** the executable (built by GitHub CI) is copied
+#  into the build context next to this file as `convert_grayscale`.
+#  The recipe therefore only needs to install the C++ runtime and place the
+#  binary on the PATH – no compiling happens inside the container.
+# ===========================================================================
+
 Bootstrap: docker
-
-Stage: builder
 From: ubuntu:24.04
-%post
-  set -eux
-  apt-get update && apt-get install -y --no-install-recommends \
-        build-essential cmake
-  cd /opt/src && ./build.sh            # your existing script
-  apt-get purge -y build-essential cmake
-  apt-get autoremove -y
-  apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
-%environment
-  PATH=/opt/app/build:$PATH
+
 %labels
-  Maintainer="you@example.com"
+    Author      "Your Name <you@example.com>"
+    Version     "1.0"
+    Description "Pre‑built grayscale converter binary"
 
-Stage: runtime
-From: ubuntu:24.04
-%files from builder /opt/app/build /opt/app/
+# ---------------------------------------------------------------------------
+# Copy the executable produced by the CI build into the image
+# ---------------------------------------------------------------------------
+%files
+    convert_grayscale  /usr/local/bin/convert_grayscale
+
+# ---------------------------------------------------------------------------
+# Minimal runtime dependencies – the C++ standard library
+# ---------------------------------------------------------------------------
 %post
-  set -eux
-  apt-get update && apt-get install -y --no-install-recommends libstdc++6
-  apt-get clean && rm -rf /var/lib/apt/lists/*
+    set -euo pipefail
+    apt-get update && \
+    apt-get install -y --no-install-recommends libstdc++6 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# Ensure the binary is on the PATH when the container starts
+# ---------------------------------------------------------------------------
+%environment
+    PATH="/usr/local/bin:$PATH"
+    export PATH
+
+# ---------------------------------------------------------------------------
+# Default action when the image is executed with `singularity run image.sif`
+# ---------------------------------------------------------------------------
 %runscript
-  exec /opt/app/build/convert_grayscale "$@"
+    #!/bin/sh
+    exec /usr/local/bin/convert_grayscale "$@"
