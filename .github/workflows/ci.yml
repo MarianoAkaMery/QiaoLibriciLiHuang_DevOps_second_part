@@ -1,153 +1,132 @@
 # .github/workflows/build-test-containerize.yml
-# -------------------------------------------------
-# Build, unit‑test, containerise, and (optionally) submit a SLURM job on the Galileo super‑computer.
-# The Galileo hop is gated behind presence of the required secrets so local CI never fails
-# just because the deployment credentials are absent.  
-#
-# Supported secret names (either set works):
-#   * SLURM_HOST          or GALILEO_HOST   – login node hostname
-#   * SLURM_USER          or GALILEO_USER   – HPC username
-#   * SLURM_PRIVATE_KEY   or GALILEO_KEY    – private SSH key (PEM)
-#   * SSH_CERTIFICATE     or GALILEO_CERT   – OpenSSH cert (optional)
+name: build-test-containerize
 
-name: build‑test‑containerize
-
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
-
-# Re‑usable constant for the produced Singularity image
-env:
-  SIF_NAME: grayscale.sif
+on: [push, pull_request]
 
 jobs:
   build:
     runs-on: ubuntu-24.04
-
-    # Map whichever secret names the repo has into a single set of env vars the
-    # rest of the workflow expects (empty if neither variant is present)
     env:
-      GALILEO_HOST: ${{ secrets.SLURM_HOST       || secrets.GALILEO_HOST }}
-      GALILEO_USER: ${{ secrets.SLURM_USER       || secrets.GALILEO_USER }}
-      GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY|| secrets.GALILEO_KEY  }}
-      GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE  || secrets.GALILEO_CERT }}  # optional
+      SIF_NAME: grayscale.sif
 
     steps:
-      # -------------------------------------------------
-      # ⬇⬇  Local build & test  ⬇⬇
-      # -------------------------------------------------
-      - name: 📥 Checkout source (with submodules)
-        uses: actions/checkout@v3
-        with:
-          submodules: recursive
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
 
-      - name: 🛠️  Install system build deps
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            cmake g++ make \
-            uuid-dev libseccomp-dev pkg-config \
-            squashfs-tools cryptsetup \
-            dos2unix curl wget openssh-client
+    # ------------------------------------------------
+    # 1) Build & unit-test
+    # ------------------------------------------------
+    - name: Install build deps
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          cmake g++ make \
+          uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
+          dos2unix curl wget openssh-client
 
-      - name: 🛠️  Install Singularity
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y singularity-container
+    - name: Install singularity
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y singularity-container
 
-      - name: 🏗️  Build C++ sources & run unit tests
-        run: |
-          ./build.sh
-          ./build/test_grayscale
+    - name: Compile & test
+      run: |
+        ./build.sh
+        ./build/test_grayscale
 
-      - name: 📦 Build Singularity image
-        run: sudo singularity build "$SIF_NAME" Singularity.def
+    # ------------------------------------------------
+    # 2) Containerise
+    # ------------------------------------------------
+    - name: Build SIF
+      run: sudo singularity build "$SIF_NAME" Singularity.def
 
-      - name: ⬆️  Upload image as artifact (for debugging / manual download)
-        uses: actions/upload-artifact@v4
-        with:
-          name: "${{ env.SIF_NAME }}-${{ github.sha }}.sif"
-          path: "$SIF_NAME"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.SIF_NAME }}-${{ github.sha }}.sif
+        path: ${{ env.SIF_NAME }}
 
-      # -------------------------------------------------
-      # ⬇⬇  Remote (Galileo) section  ⬇⬇
-      # -------------------------------------------------
-      - name: 🛂 Verify Galileo secrets are present
-        id: check_secrets
-        run: |
-          missing=0
-          for var in GALILEO_HOST GALILEO_USER GALILEO_KEY; do
-            if [[ -z "${!var}" ]]; then
-              echo "::error::Required secret $var is not set or empty" >&2
-              missing=1
-            fi
-          done
-          exit $missing
-
-      - name: 🚀 Upload SIF & job script to Galileo
-        if: steps.check_secrets.outcome == 'success'
-        run: |
-          set -euo pipefail
-
-          # --- create SSH material
-          mkdir -p ~/.ssh
-          echo "$GALILEO_KEY" > ~/.ssh/my_key
-          chmod 600 ~/.ssh/my_key
-
-          if [[ -n "$GALILEO_CERT" ]]; then
-            echo "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
-            chmod 644 ~/.ssh/my_key-cert.pub
+    # ------------------------------------------------
+    # 3) Push al supercomputer & submit job
+    # ------------------------------------------------
+    - name: Verify Galileo secrets
+      if: ${{ !github.event.pull_request }}           # solo sui push
+      env:
+        GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
+        GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
+        GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY || secrets.GALILEO_KEY }}
+        GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE    || secrets.GALILEO_CERT }}
+      run: |
+        for var in GALILEO_HOST GALILEO_USER GALILEO_KEY; do
+          if [[ -z "${!var}" ]]; then
+            echo "::error::$var is not set"; exit 1
           fi
+        done
 
-          # --- write minimal config (only include cert line if provided)
-          cat > ~/.ssh/config <<CFG
-          Host galileo
-            HostName $GALILEO_HOST
-            User $GALILEO_USER
-            IdentityFile ~/.ssh/my_key
-            IdentitiesOnly yes
-            StrictHostKeyChecking no
-            UserKnownHostsFile /dev/null
-          CFG
-          [[ -n "$GALILEO_CERT" ]] && echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
+    - name: Copy & sanity-check on Galileo
+      if: ${{ !github.event.pull_request }}
+      env:
+        GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
+        GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
+        GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY || secrets.GALILEO_KEY }}
+        GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE    || secrets.GALILEO_CERT }}
+      run: |
+        set -euo pipefail
 
-          # --- push artifacts
-          scp -F ~/.ssh/config "$SIF_NAME" job.sh galileo:~/seproject/
+        # --- create SSH material
+        mkdir -p ~/.ssh
+        echo "$GALILEO_KEY"  > ~/.ssh/my_key
+        chmod 600 ~/.ssh/my_key
 
-      - name: 🔍 Remote sanity‑check of files & quick exec smoke‑test
-        if: steps.check_secrets.outcome == 'success'
-        run: |
-          ssh -F ~/.ssh/config galileo "ls -lh ~/seproject/$SIF_NAME && singularity exec ~/seproject/$SIF_NAME --help | head -n 5"
+        if [[ -n "$GALILEO_CERT" ]]; then
+          echo "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
+          chmod 644 ~/.ssh/my_key-cert.pub
+        fi
 
-      - name: 📝 Submit SLURM job
-        if: steps.check_secrets.outcome == 'success'
-        id: submit
-        run: |
-          set -euo pipefail
-          JOB_ID=$(ssh -F ~/.ssh/config galileo "cd ~/seproject && sbatch job.sh" | awk '{print $4}')
-          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+        # --- write minimal config
+        cat > ~/.ssh/config <<CFG
+        Host galileo
+          HostName $GALILEO_HOST
+          User $GALILEO_USER
+          IdentityFile ~/.ssh/my_key
+          IdentitiesOnly yes
+          StrictHostKeyChecking no
+          UserKnownHostsFile /dev/null
+CFG
+        [[ -n "$GALILEO_CERT" ]] && \
+          echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
 
-      - name: ⏳ Wait for SLURM job to finish
-        if: steps.check_secrets.outcome == 'success'
-        run: |
-          set -euo pipefail
-          JOB=${{ steps.submit.outputs.job_id }}
-          echo "Waiting for SLURM job $JOB …"
-          while true; do
-            STATE=$(ssh -F ~/.ssh/config galileo 2>/dev/null \
-              "sacct -j $JOB -n -o State | head -n 1 | awk '{print \$1}'")
-            [[ -z "$STATE" ]] && STATE=PENDING   # sacct sometimes lags
-            echo "  -> current state: $STATE"
-            case "$STATE" in
-              PENDING|CONFIGURING|RUNNING|COMPLETING)
-                sleep 20 ;;
-              COMPLETED)
-                echo "Job finished OK ✅" ; break ;;
-              FAILED|CANCELLED|TIMEOUT|NODE_FAIL|PREEMPTED)
-                echo "::error::Job finished with error state $STATE" ; exit 1 ;;
-              *)
-                echo "::error::Unknown state '$STATE' – giving up" ; exit 2 ;;
-            esac
-          done
+        # --- push artifacts
+        scp -F ~/.ssh/config "$SIF_NAME" job.sh galileo:~/seproject/
+
+        # --- sanity-check remoto (usa l’eseguibile giusto!)
+        ssh -F ~/.ssh/config galileo "
+          ls -lh ~/seproject/$SIF_NAME
+          singularity exec ~/seproject/$SIF_NAME /usr/local/bin/convert_grayscale --help | head -n 5
+        "
+
+    - name: Submit SLURM job and wait
+      if: ${{ !github.event.pull_request }}
+      env:
+        GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
+        GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
+      run: |
+        set -euo pipefail
+        JOB_ID=$(ssh -F ~/.ssh/config galileo "cd ~/seproject && sbatch job.sh" \
+                 | awk '{print \$4}')
+        echo "SLURM job id: $JOB_ID"
+
+        echo "Waiting for SLURM job $JOB_ID …"
+        while true; do
+          STATE=$(ssh -F ~/.ssh/config galileo \
+                  "sacct -j $JOB_ID -n -o State | head -n 1 | awk '{print \$1}'")
+          [[ -z "$STATE" ]] && STATE=PENDING
+          echo "  -> current state: $STATE"
+          case "$STATE" in
+            PENDING|CONFIGURING|RUNNING|COMPLETING) sleep 20 ;;
+            COMPLETED) echo "Job finished OK ✅"; break ;;
+            FAILED|CANCELLED|TIMEOUT|NODE_FAIL|PREEMPTED)
+              echo "Job finished with error state ❌"; exit 1 ;;
+            *)  echo "Unknown state '$STATE' – giving up"; exit 2 ;;
+          esac
+        done
