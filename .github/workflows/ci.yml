@@ -6,17 +6,25 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-24.04
+
+    # -------------------------------------------------
+    # Variabili di JOB  → visibili in TUTTI gli step
+    # -------------------------------------------------
     env:
-      SIF_NAME: grayscale.sif
+      SIF_NAME:     grayscale.sif
+      GALILEO_HOST: ${{ secrets.SLURM_HOST       || secrets.GALILEO_HOST }}
+      GALILEO_USER: ${{ secrets.SLURM_USER       || secrets.GALILEO_USER }}
+      GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY|| secrets.GALILEO_KEY  }}
+      GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE  || secrets.GALILEO_CERT }}
 
     steps:
+    # -----------------------------------------------
+    # 1) Build & unit-test
+    # -----------------------------------------------
     - uses: actions/checkout@v3
       with:
         submodules: recursive
 
-    # ------------------------------------------------
-    # 1) Build & unit-test
-    # ------------------------------------------------
     - name: Install build deps
       run: |
         sudo apt update
@@ -35,9 +43,9 @@ jobs:
         ./build.sh
         ./build/test_grayscale
 
-    # ------------------------------------------------
+    # -----------------------------------------------
     # 2) Containerise
-    # ------------------------------------------------
+    # -----------------------------------------------
     - name: Build SIF
       run: sudo singularity build "$SIF_NAME" Singularity.def
 
@@ -47,78 +55,64 @@ jobs:
         path: ${{ env.SIF_NAME }}
 
     # ------------------------------------------------
-    # 3) Push al supercomputer & submit job
+    # 3) Patch job script, copia su Galileo, sbatch
     # ------------------------------------------------
-    - name: Verify Galileo secrets
-      if: ${{ !github.event.pull_request }}           # solo sui push
-      env:
-        GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
-        GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
-        GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY || secrets.GALILEO_KEY }}
-        GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE    || secrets.GALILEO_CERT }}
+    - name: Patch SLURM paths
+      if: ${{ !github.event.pull_request }}   # solo su push in default branch
       run: |
-        for var in GALILEO_HOST GALILEO_USER GALILEO_KEY; do
-          if [[ -z "${!var}" ]]; then
-            echo "::error::$var is not set"; exit 1
-          fi
+        # lasciamo $SCRATCH da espandere sul nodo Galileo → apici *singoli*
+        sed -i \
+          -e 's|^IN_HOST=.*|IN_HOST=$SCRATCH/seproject/images|' \
+          -e 's|^OUT_HOST=.*|OUT_HOST=$SCRATCH/seproject/result|' \
+          job.sh
+
+    - name: Copy SIF & submit job
+      if: ${{ !github.event.pull_request }}
+      run: |
+        set -euo pipefail
+
+        # --- SSH material ---------------------------------------------------
+        mkdir -p ~/.ssh
+        printf '%s\n' "$GALILEO_KEY" > ~/.ssh/my_key
+        chmod 600 ~/.ssh/my_key
+
+        if [[ -n "${GALILEO_CERT:-}" ]]; then
+          printf '%s\n' "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
+          chmod 644 ~/.ssh/my_key-cert.pub
+        fi
+
+        { echo "Host galileo"
+          echo "  HostName $GALILEO_HOST"
+          echo "  User $GALILEO_USER"
+          echo "  IdentityFile ~/.ssh/my_key"
+          echo "  IdentitiesOnly yes"
+          echo "  StrictHostKeyChecking no"
+          echo "  UserKnownHostsFile /dev/null"
+          [[ -n "${GALILEO_CERT:-}" ]] && \
+            echo "  CertificateFile ~/.ssh/my_key-cert.pub"
+        } > ~/.ssh/config
+        chmod 600 ~/.ssh/config
+        # --------------------------------------------------------------------
+
+        # Copia container + script
+        scp -F ~/.ssh/config "$SIF_NAME" job.sh  galileo:~/seproject/
+
+        # Lancio e polling
+        JOB_ID=$(ssh -F ~/.ssh/config galileo \
+                   "cd ~/seproject && sbatch job.sh" | awk '{print $4}')
+        echo "SLURM job id: $JOB_ID"
+
+        echo "Waiting for SLURM job $JOB_ID …"
+        while true; do
+          STATE=$(ssh -F ~/.ssh/config galileo \
+                    "sacct -j $JOB_ID -n -o State" | awk 'NR==1{print $1}')
+          [[ -z $STATE ]] && STATE=PENDING
+          echo "  -> current state: $STATE"
+          case "$STATE" in
+            PENDING|CONFIGURING|RUNNING|COMPLETING) sleep 20 ;;
+            COMPLETED) echo 'Job finished OK ✅';  break ;;
+            FAILED|CANCELLED|TIMEOUT|NODE_FAIL|PREEMPTED)
+                      echo 'Job failed ❌'; exit 1 ;;
+            *)        echo "Unknown state $STATE"; exit 2 ;;
+          esac
         done
-
-# ------------- crea ~/.ssh/config  -------------
-
-# ................................................
-    - name: Patch SLURM job script paths
-      run: |
-          # imposta le directory host che il job dovrà montare
-          sed -i \
-            -e 's|^IN_HOST=.*|IN_HOST=$SCRATCH/seproject/images|' \
-            -e 's|^OUT_HOST=.*|OUT_HOST=$SCRATCH/seproject/result|' \
-            job.sh
-
-    - name: Copy SIF + job.sh to Galileo
-      run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          echo "$GALILEO_KEY"  > ~/.ssh/my_key
-          chmod 600 ~/.ssh/my_key
-          if [[ -n "$GALILEO_CERT" ]]; then
-            echo "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
-            chmod 644 ~/.ssh/my_key-cert.pub
-          fi
-
-          {                                   # ↙︎ mini-config ssh
-            echo "Host galileo"
-            echo "  HostName $GALILEO_HOST"
-            echo "  User $GALILEO_USER"
-            echo "  IdentityFile ~/.ssh/my_key"
-            echo "  IdentitiesOnly yes"
-            echo "  StrictHostKeyChecking no"
-            echo "  UserKnownHostsFile /dev/null"
-            [[ -n \"$GALILEO_CERT\" ]] && \
-              echo "  CertificateFile ~/.ssh/my_key-cert.pub"
-          } > ~/.ssh/config
-
-          scp -F ~/.ssh/config "$SIF_NAME" job.sh galileo:~/seproject/
-
-    - name: Submit SLURM job and wait
-      run: |
-          set -euo pipefail
-          JOB_ID=$(ssh -F ~/.ssh/config galileo \
-                     "cd ~/seproject && sbatch job.sh" \
-                     | awk '{print $4}')
-          echo "SLURM job id: $JOB_ID"
-
-          echo "Waiting for SLURM job $JOB_ID …"
-          while true; do
-            STATE=$(ssh -F ~/.ssh/config galileo \
-                      "sacct -j $JOB_ID -n -o State" \
-                      | head -n 1 | awk '{print $1}')
-            [[ -z $STATE ]] && STATE=PENDING
-            echo "  -> current state: $STATE"
-            case "$STATE" in
-              PENDING|CONFIGURING|RUNNING|COMPLETING) sleep 20 ;;
-              COMPLETED) echo "Job finished OK ✅"; break ;;
-              FAILED|CANCELLED|TIMEOUT|NODE_FAIL|PREEMPTED)
-                         echo "Job finished with error state ❌"; exit 1 ;;
-              *)         echo "Unknown state '$STATE' – giving up"; exit 2 ;;
-            esac
-          done
