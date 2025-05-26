@@ -1,8 +1,12 @@
 #!/bin/bash
+set -e
+
+# Start from a clean slate so CMake never points to host paths
+rm -rf build
 
 mkdir -p build && cd build
 cmake ..
 cmake --build .
-mv convert_grayscale ..
 cd ..
-echo "Build complete and 'convert_grayscale' moved to the parent directory."
+
+echo "Build complete; binaries are in build/"

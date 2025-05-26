@@ -3,7 +3,7 @@ From: ubuntu:22.04
 
 %labels
     Author "Yibo"
-    Version "1.0"
+    Version "1.1"
 
 %post
     echo "🧱  Installing system deps …"
@@ -26,6 +26,9 @@ From: ubuntu:22.04
     chmod +x build.sh
     ./build.sh            # produces build/convert_grayscale & build/test_grayscale
 
+    # -- optional: slim the image (~120 MB smaller)
+    apt-get purge -y git libgtest-dev && apt-get autoremove -y
+
 %files
 . /opt/app_src           # context from the repo pushed by the GH runner
 
@@ -33,6 +36,6 @@ From: ubuntu:22.04
     export PATH=/opt/app/build:$PATH   # make binaries callable directly
 
 %runscript
-    # Default action inside the container -> run the converter with passed args
+    # Default action inside the container → run converter with passed args
     echo "🚀  Running convert_grayscale inside container …"
     exec /opt/app/build/convert_grayscale "$@"

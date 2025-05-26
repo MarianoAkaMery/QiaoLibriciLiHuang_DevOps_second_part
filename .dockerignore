@@ -1,0 +1,5 @@
+# Exclude build artefacts & heavy archives from the image context
+build/
+*.sif
+singularity-3.8.7*
+step-linux-amd64.tar.gz
