@@ -102,19 +102,22 @@ jobs:
 
 # ------------- submit job & wait -------------
     - name: Submit SLURM job and wait
-      if: ${{ !github.event.pull_request }}
       run: |
         set -euo pipefail
+
         JOB_ID=$(ssh -F ~/.ssh/config galileo \
                  "cd ~/seproject && sbatch job.sh" | awk '{print $4}')
         echo "SLURM job id: $JOB_ID"
 
         echo "Waiting for SLURM job $JOB_ID …"
         while true; do
+          # 👉 prendiamo la prima colonna *dopo* il ritorno SSH
           STATE=$(ssh -F ~/.ssh/config galileo \
-                  "sacct -j $JOB_ID -n -o State | head -n 1 | awk '{print $1}'")
+                  "sacct -j $JOB_ID -n -o State | head -n 1" | awk '{print $1}')
+
           [[ -z "$STATE" ]] && STATE=PENDING
           echo "  -> current state: $STATE"
+
           case "$STATE" in
             PENDING|CONFIGURING|RUNNING|COMPLETING) sleep 20 ;;
             COMPLETED) echo "Job finished OK ✅"; break ;;
