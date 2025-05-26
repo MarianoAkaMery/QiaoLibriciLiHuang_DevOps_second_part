@@ -63,63 +63,56 @@ jobs:
           fi
         done
 
+# ------------- crea ~/.ssh/config  -------------
     - name: Copy & sanity-check on Galileo
       if: ${{ !github.event.pull_request }}
       env:
-        GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
-        GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
-        GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY || secrets.GALILEO_KEY }}
-        GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE    || secrets.GALILEO_CERT }}
+        GALILEO_HOST: ${{ secrets.SLURM_HOST }}
+        GALILEO_USER: ${{ secrets.SLURM_USER }}
+        GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY }}
+        GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE }}
       run: |
         set -euo pipefail
 
-        # --- create SSH material
         mkdir -p ~/.ssh
         echo "$GALILEO_KEY"  > ~/.ssh/my_key
         chmod 600 ~/.ssh/my_key
-
-        if [[ -n "$GALILEO_CERT" ]]; then
+        [[ -n "$GALILEO_CERT" ]] && {
           echo "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
           chmod 644 ~/.ssh/my_key-cert.pub
-        fi
+        }
 
-        # --- write minimal config
-        cat > ~/.ssh/config <<CFG
-        Host galileo
-          HostName $GALILEO_HOST
-          User $GALILEO_USER
-          IdentityFile ~/.ssh/my_key
-          IdentitiesOnly yes
-          StrictHostKeyChecking no
-          UserKnownHostsFile /dev/null
-          CFG
-                  [[ -n "$GALILEO_CERT" ]] && \
-                    echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
+        # niente heredoc: usiamo un blocco echo-safe
+        {
+          echo "Host galileo"
+          echo "  HostName $GALILEO_HOST"
+          echo "  User $GALILEO_USER"
+          echo "  IdentityFile ~/.ssh/my_key"
+          echo "  IdentitiesOnly yes"
+          echo "  StrictHostKeyChecking no"
+          echo "  UserKnownHostsFile /dev/null"
+          [[ -n \"$GALILEO_CERT\" ]] && \
+            echo "  CertificateFile ~/.ssh/my_key-cert.pub"
+        } > ~/.ssh/config
 
-                  # --- push artifacts
-                  scp -F ~/.ssh/config "$SIF_NAME" job.sh galileo:~/seproject/
+        scp -F ~/.ssh/config "$SIF_NAME" job.sh galileo:~/seproject/
+        ssh -F ~/.ssh/config galileo \
+           "ls -lh ~/seproject/$SIF_NAME && \
+            singularity exec ~/seproject/$SIF_NAME /usr/local/bin/convert_grayscale --help | head -n 5"
 
-                  # --- sanity-check remoto (usa l’eseguibile giusto!)
-                  ssh -F ~/.ssh/config galileo "
-                    ls -lh ~/seproject/$SIF_NAME
-                    singularity exec ~/seproject/$SIF_NAME /usr/local/bin/convert_grayscale --help | head -n 5
-                  "
-
+# ------------- submit job & wait -------------
     - name: Submit SLURM job and wait
       if: ${{ !github.event.pull_request }}
-      env:
-        GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
-        GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
       run: |
         set -euo pipefail
-        JOB_ID=$(ssh -F ~/.ssh/config galileo "cd ~/seproject && sbatch job.sh" \
-                 | awk '{print \$4}')
+        JOB_ID=$(ssh -F ~/.ssh/config galileo \
+                 "cd ~/seproject && sbatch job.sh" | awk '{print $4}')
         echo "SLURM job id: $JOB_ID"
 
         echo "Waiting for SLURM job $JOB_ID …"
         while true; do
           STATE=$(ssh -F ~/.ssh/config galileo \
-                  "sacct -j $JOB_ID -n -o State | head -n 1 | awk '{print \$1}'")
+                  "sacct -j $JOB_ID -n -o State | head -n 1 | awk '{print $1}'")
           [[ -z "$STATE" ]] && STATE=PENDING
           echo "  -> current state: $STATE"
           case "$STATE" in
