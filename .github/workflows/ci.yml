@@ -1,123 +1,148 @@
-name: DevOps Pipeline Test
+# ----------------------------------------------------------------------------------
+# GitHub Actions ‑ build, test, containerize **and** run on Galileo
+# ----------------------------------------------------------------------------------
+name: build‑test‑containerize
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ master, main ]
   pull_request:
-    branches: [ main, master ]
 
 jobs:
   build-test-containerize:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+
+    env:
+      # handy shortcuts for re‑use below
+      SIF_NAME: grayscale.sif
 
     steps:
-      - name: Checkout code with submodules
-        uses: actions/checkout@v3
-        with:
-          submodules: recursive
 
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            cmake g++ make \
-            uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
-            dos2unix curl wget openssh-client
+    # ────────────────────────────── source & deps ──────────────────────────────
+    - name: Checkout source (with submodules)
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
 
-      - name: Install Singularity
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y singularity-container
+    - name: Install build tool‑chain
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          cmake g++ make \
+          uuid-dev libseccomp-dev pkg-config squashfs-tools cryptsetup \
+          dos2unix curl wget openssh-client
 
+    - name: Install Singularity (Apptainer)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y singularity-container
 
-      - name: Run build script
-        run: ./build.sh
+    # ──────────────────────────────── build & test ─────────────────────────────
+    - name: Build C++ project
+      run: ./build.sh
 
-      - name: Run unit tests
-        run: ./build/test_grayscale
+    - name: Run unit tests
+      run: ./build/test_grayscale
 
-      - name: Build Singularity image
-        run: sudo singularity build grayscale.sif Singularity.def
+    - name: Build Singularity image
+      run: sudo singularity build ${{ env.SIF_NAME }} Singularity.def
 
-      - name: Upload Singularity image
-        uses: actions/upload-artifact@v4
-        with:
-          name: grayscale-${{ github.sha }}.sif
-          path: grayscale.sif
+    - name: Upload image as workflow artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: "grayscale-${{ github.sha }}.sif"
+        path: ${{ env.SIF_NAME }}
 
-      - name: Prepare job.sh
-        run: dos2unix job.sh || true
+    # ─────────────────────────── prepare remote execution ──────────────────────
+    - name: Convert job.sh to Unix line‑endings (just in case)
+      run: dos2unix job.sh || true
 
-      - name: Set up SSH key, cert, and config
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SLURM_PRIVATE_KEY }}" > ~/.ssh/my_key
-          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/my_key.pub
-          echo "${{ secrets.SSH_CERTIFICATE }}" > ~/.ssh/my_key-cert.pub
-          chmod 600 ~/.ssh/my_key
-          chmod 644 ~/.ssh/my_key.pub ~/.ssh/my_key-cert.pub
-          cat <<EOF > ~/.ssh/config
-          Host galileo
-              HostName ${{ secrets.SLURM_HOST }}
-              User ${{ secrets.SLURM_USER }}
-              IdentityFile ~/.ssh/my_key
-              CertificateFile ~/.ssh/my_key-cert.pub
-              IdentitiesOnly yes
-              StrictHostKeyChecking no
-              UserKnownHostsFile=/dev/null
-          EOF
+    - name: Setup SSH config for Galileo
+      env:
+        GALILEO_KEY:  ${{ secrets.GALILEO_KEY }}   # private key
+        GALILEO_CERT: ${{ secrets.GALILEO_CERT }}  # corresponding OpenSSH cert (optional)
+        GALILEO_HOST: ${{ secrets.GALILEO_HOST }}  # e.g. login.galileo.example.org
+        GALILEO_USER: ${{ secrets.GALILEO_USER }}  # username on the cluster
+      run: |
+        set -euo pipefail
+        mkdir -p ~/.ssh
 
-      - name: Transfer files to Galileo100
-        run: |
-          scp -F ~/.ssh/config grayscale.sif job.sh galileo:~/seproject/
+        # private key & (optionally) cert
+        echo "$GALILEO_KEY"  > ~/.ssh/my_key
+        echo "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
+        chmod 600 ~/.ssh/my_key
+        chmod 644 ~/.ssh/my_key-cert.pub
 
-      - name: Submit SLURM job
-        id: submit
-        run: |
-          JOB_ID=$(ssh -F ~/.ssh/config galileo "cd ~/seproject && sbatch job.sh" | awk '{print $4}')
-          echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
+        # minimal SSH config stanza
+        cat <<EOF > ~/.ssh/config
+        Host galileo
+            HostName ${GALILEO_HOST}
+            User ${GALILEO_USER}
+            IdentityFile ~/.ssh/my_key
+            CertificateFile ~/.ssh/my_key-cert.pub
+            IdentitiesOnly yes
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+        EOF
 
-      - name: Wait for SLURM job to finish
-        run: |
-          JOB=${{ steps.submit.outputs.job_id }}
-          echo "Waiting for SLURM job $JOB …"
-          while true; do
-            STATE=$(ssh -F ~/.ssh/config galileo 2>/dev/null \
+    - name: Copy SIF & job script to Galileo
+      run: scp -F ~/.ssh/config ${{ env.SIF_NAME }} job.sh galileo:~/seproject/
+
+    # ────────────────────── remote sanity‑checks *then* submit ──────────────────
+    - name: Remote checks and sbatch submit
+      id: submit
+      run: |
+        set -euo pipefail
+        ssh -F ~/.ssh/config galileo <<'EOSSH'
+          set -euo pipefail
+          cd ~/seproject
+
+          echo "Verifying artifacts on Galileo …"
+
+          # 1) container present & non‑empty
+          test -s grayscale.sif \
+            || { echo "❌ grayscale.sif missing or empty"; exit 42; }
+
+          # 2) job.sh present & executable (chmod just in case)
+          chmod +x job.sh
+          test -x job.sh \
+            || { echo "❌ job.sh missing or not executable"; exit 43; }
+
+          # 3) smoke‑test that the binary really lives inside the SIF
+          singularity exec grayscale.sif convert_grayscale --help >/dev/null \
+            || { echo "❌ convert_grayscale not runnable inside the SIF"; exit 44; }
+
+          echo "All remote checks passed ✅"
+
+          # finally submit to the scheduler; capture job‑id for the caller
+          sbatch --parsable job.sh
+        EOSSH > job_id.txt
+
+    - name: Read SLURM job‑id
+      id: jobid
+      run: echo "job=$(cat job_id.txt)" >> "$GITHUB_OUTPUT"
+
+    # ───────────────────────── wait loop (optional) ────────────────────────────
+    - name: Wait for SLURM job to finish
+      if: ${{ steps.submit.outcome == 'success' }}
+      run: |
+        set -euo pipefail
+        JOB="${{ steps.jobid.outputs.job }}"
+        echo "Waiting for SLURM job $JOB …"
+        while true; do
+          STATE=$(ssh -F ~/.ssh/config galileo 2>/dev/null \
                     "sacct -j $JOB -n -o State | head -n 1 | awk '{print \$1}'")
-            # sacct can lag for a few seconds right after submission
-            if [ -z "$STATE" ] ; then
-              STATE=PENDING
-            fi
-            echo "  -> current state: $STATE"
-            case "$STATE" in
-              PENDING|CONFIGURING|RUNNING|COMPLETING)
-                sleep 20
-                ;;
-              COMPLETED)
-                echo "Job finished OK ✅"
-                break
-                ;;
-              FAILED|CANCELLED|TIMEOUT|NODE_FAIL|PREEMPTED)
-                echo "Job finished with error state ❌"
-                exit 1
-                ;;
-              *)
-                echo "Unknown state '$STATE' – giving up"
-                exit 2
-                ;;
-            esac
-          done
-
-
-      - name: Download result logs
-        run: |
-          scp -F ~/.ssh/config galileo:~/seproject/grayscale_output.log .
-
-      - name: Show job output in logs
-        run: cat grayscale_output.log
-
-      - name: Upload output log as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: grayscale_output-${{ github.sha }}.log
-          path: grayscale_output.log
+          # sacct can lag for a few seconds right after submission
+          if [ -z "$STATE" ]; then STATE=PENDING; fi
+          echo "  -> current state: $STATE"
+          case "$STATE" in
+            PENDING|CONFIGURING|RUNNING|COMPLETING)
+              sleep 20 ;;
+            COMPLETED)
+              echo "Job finished OK ✅" ; break ;;
+            FAILED|CANCELLED|TIMEOUT|NODE_FAIL|PREEMPTED)
+              echo "Job finished with error state ❌" ; exit 1 ;;
+            *)
+              echo "Unknown state '$STATE' – giving up" ; exit 2 ;;
+          esac
+        done
