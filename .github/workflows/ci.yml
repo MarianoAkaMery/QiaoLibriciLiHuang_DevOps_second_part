@@ -92,18 +92,18 @@ jobs:
           IdentitiesOnly yes
           StrictHostKeyChecking no
           UserKnownHostsFile /dev/null
-CFG
-        [[ -n "$GALILEO_CERT" ]] && \
-          echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
+          CFG
+                  [[ -n "$GALILEO_CERT" ]] && \
+                    echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
 
-        # --- push artifacts
-        scp -F ~/.ssh/config "$SIF_NAME" job.sh galileo:~/seproject/
+                  # --- push artifacts
+                  scp -F ~/.ssh/config "$SIF_NAME" job.sh galileo:~/seproject/
 
-        # --- sanity-check remoto (usa l’eseguibile giusto!)
-        ssh -F ~/.ssh/config galileo "
-          ls -lh ~/seproject/$SIF_NAME
-          singularity exec ~/seproject/$SIF_NAME /usr/local/bin/convert_grayscale --help | head -n 5
-        "
+                  # --- sanity-check remoto (usa l’eseguibile giusto!)
+                  ssh -F ~/.ssh/config galileo "
+                    ls -lh ~/seproject/$SIF_NAME
+                    singularity exec ~/seproject/$SIF_NAME /usr/local/bin/convert_grayscale --help | head -n 5
+                  "
 
     - name: Submit SLURM job and wait
       if: ${{ !github.event.pull_request }}
