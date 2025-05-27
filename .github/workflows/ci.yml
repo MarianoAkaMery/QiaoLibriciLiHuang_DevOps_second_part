@@ -73,62 +73,27 @@ jobs:
       # ------------------------------------------------
       # 3) Transfer to Galileo and Submit Job
       # ------------------------------------------------
-      - name: Verify Galileo Secrets
-        if: ${{ !github.event.pull_request }}
-        env:
-          GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
-          GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
-          GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY || secrets.GALILEO_KEY }}
-          GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE || secrets.GALILEO_CERT }}
+      - name: Set up SSH key, cert, and config
         run: |
-          for var in GALILEO_HOST GALILEO_USER GALILEO_KEY; do
-            if [[ -z "${!var}" ]]; then
-              echo "::error::$var is not set"; exit 1
-            fi
-          done
+            mkdir -p ~/.ssh
+            echo "${{ secrets.SLURM_PRIVATE_KEY }}" > ~/.ssh/my_key
+            echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/my_key.pub
+            echo "${{ secrets.SSH_CERTIFICATE }}" > ~/.ssh/my_key-cert.pub
+            chmod 600 ~/.ssh/my_key
+            chmod 644 ~/.ssh/my_key.pub ~/.ssh/my_key-cert.pub
+            cat <<EOF > ~/.ssh/config
+            Host galileo
+                HostName ${{ secrets.SLURM_HOST }}
+                User ${{ secrets.SLURM_USER }}
+                IdentityFile ~/.ssh/my_key
+                CertificateFile ~/.ssh/my_key-cert.pub
+                IdentitiesOnly yes
+                StrictHostKeyChecking no
+                UserKnownHostsFile=/dev/null
+            EOF
 
-      - name: Copy and check on Galileo
-        if: ${{ !github.event.pull_request }}
-        env:
-          GALILEO_HOST: ${{ secrets.SLURM_HOST || secrets.GALILEO_HOST }}
-          GALILEO_USER: ${{ secrets.SLURM_USER || secrets.GALILEO_USER }}
-          GALILEO_KEY:  ${{ secrets.SLURM_PRIVATE_KEY || secrets.GALILEO_KEY }}
-          GALILEO_CERT: ${{ secrets.SSH_CERTIFICATE || secrets.GALILEO_CERT }}
-          SIF_NAME: grayscale.sif
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          echo "$GALILEO_KEY" > ~/.ssh/my_key
-          chmod 600 ~/.ssh/my_key
 
-          if [[ -n "$GALILEO_CERT" ]]; then
-            echo "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
-            chmod 644 ~/.ssh/my_key-cert.pub
-          fi
-
-          cat > ~/.ssh/config <<EOF
-          Host galileo
-            HostName $GALILEO_HOST
-            User $GALILEO_USER
-            IdentityFile ~/.ssh/my_key
-            IdentitiesOnly yes
-            StrictHostKeyChecking no
-            UserKnownHostsFile /dev/null
-          EOF
-
-          if [[ -n "$GALILEO_CERT" ]]; then
-            echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
-          fi
-
-          echo "Transferring files to Galileo..."
-          scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
-
-          echo "Checking container and entrypoint..."
-          ssh -F ~/.ssh/config galileo "
-            ls -lh ~/seproject/$SIF_NAME
-            singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo '⚠️ Binary not found inside container'
-          "
-
+            
       - name: Submit SLURM job and wait
         if: ${{ !github.event.pull_request }}
         env:
