@@ -100,10 +100,12 @@ jobs:
           mkdir -p ~/.ssh
           echo "$GALILEO_KEY" > ~/.ssh/my_key
           chmod 600 ~/.ssh/my_key
+
           if [[ -n "$GALILEO_CERT" ]]; then
             echo "$GALILEO_CERT" > ~/.ssh/my_key-cert.pub
             chmod 644 ~/.ssh/my_key-cert.pub
           fi
+
           cat > ~/.ssh/config <<EOF
           Host galileo
             HostName $GALILEO_HOST
@@ -112,17 +114,20 @@ jobs:
             IdentitiesOnly yes
             StrictHostKeyChecking no
             UserKnownHostsFile /dev/null
-            EOF
-                      [[ -n "$GALILEO_CERT" ]] && echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
+          EOF
 
-                      echo "Transferring files to Galileo..."
-                      scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
+          if [[ -n "$GALILEO_CERT" ]]; then
+            echo "  CertificateFile ~/.ssh/my_key-cert.pub" >> ~/.ssh/config
+          fi
 
-                      echo "Checking container and entrypoint..."
-                      ssh -F ~/.ssh/config galileo "
-                        ls -lh ~/seproject/$SIF_NAME
-                        singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo '⚠️ Binary not found inside container'
-                      "
+          echo "Transferring files to Galileo..."
+          scp -r -F ~/.ssh/config "$SIF_NAME" job.sh input/ galileo:~/seproject/
+
+          echo "Checking container and entrypoint..."
+          ssh -F ~/.ssh/config galileo "
+            ls -lh ~/seproject/$SIF_NAME
+            singularity exec ~/seproject/$SIF_NAME /opt/app/build/convert_grayscale --help || echo '⚠️ Binary not found inside container'
+          "
 
       - name: Submit SLURM job and wait
         if: ${{ !github.event.pull_request }}
