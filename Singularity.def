@@ -9,10 +9,11 @@ From: ubuntu:22.04
 CMakeLists.txt /opt/app
 Singularity.def /opt/app
 job.sh /opt/app
-src /opt/app/src
-include /opt/app/include
-input /opt/app/input
-test /opt/app/test
+src/* /opt/app/src/
+include/* /opt/app/include/
+input/* /opt/app/input/
+test/* /opt/app/test/
+
 
 %post
     apt-get update && apt-get install -y \
