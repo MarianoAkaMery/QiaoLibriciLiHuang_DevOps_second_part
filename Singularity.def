@@ -3,17 +3,10 @@ From: ubuntu:22.04
 
 %labels
     Author "yibo"
-    Version "1.0"
+    Version "0.1"
 
 %files
-CMakeLists.txt /opt/app
-Singularity.def /opt/app
-job.sh /opt/app
-src/* /opt/app/src/
-include/* /opt/app/include/
-input/* /opt/app/input/
-test/* /opt/app/test/
-
+. /opt/app
 
 %post
     apt-get update && apt-get install -y \
@@ -22,20 +15,9 @@ test/* /opt/app/test/
         libgtest-dev \
         && rm -rf /var/lib/apt/lists/*
 
-    # Build Google Test
-    cd /usr/src/gtest
-    cmake -DCMAKE_CXX_FLAGS="-fPIC" .
-    make
-    cp lib/*.a /usr/lib
-
-    # Build the project
-    mkdir -p /opt/app/build
-    cd /opt/app/build
-    cmake ..
-    make
-
 %environment
-    export PATH=/opt/app/build:$PATH
+    export PATH=/opt/app:$PATH
 
 %runscript
-    exec /opt/app/build/convert_grayscale "$@"
+    echo "Container is ready. You are inside /opt/app"
+    exec bash
