@@ -92,8 +92,14 @@ jobs:
                 UserKnownHostsFile=/dev/null
             EOF
 
+      - name: Test SSH connection to Galileo
+        run: |
+          echo "Testing SSH connection to Galileo..."
+          ssh -F ~/.ssh/config galileo "echo '✅ SSH login successful on host:' && hostname && whoami && uptime"
 
-            
+
+
+
       - name: Submit SLURM job and wait
         if: ${{ !github.event.pull_request }}
         env:
